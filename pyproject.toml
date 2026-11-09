@@ -1,0 +1,42 @@
+[project]
+name = "vagas-pj-bot"
+version = "0.1.0"
+description = "Bot diário de vagas PJ de IA/ML com scoring local via Ollama."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "typer>=0.12",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+    "tenacity>=8.3",
+    "rich>=13.7",
+    "ollama>=0.4",
+    "numpy>=2.5.4",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic"]
+st = ["sentence-transformers", "torch", "datasets", "scipy"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "respx>=0.21",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: testes que chamam o Ollama ou APIs reais (fora do padrão)",
+]
+
+[tool.uv.build-backend]
+module-name = "vagas_bot"

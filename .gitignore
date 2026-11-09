@@ -1,0 +1,18 @@
+.env
+data/cv.md
+data/seen.json
+data/history.jsonl
+data/query_stats.jsonl
+data/.last_run
+models/
+logs/
+preview.html
+
+# Python / uv
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/

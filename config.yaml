@@ -1,0 +1,60 @@
+search:
+  queries:
+    # Termos de alto volume ficam sozinhos (1 requisição = no máx. 10 vagas; um OR cheio corta vagas).
+    # Termos de baixo volume são agrupados com OR para economizar cota.
+    - "AI Engineer"
+    - "Machine Learning Engineer"
+    - "LLM Engineer OR Generative AI Engineer"
+    - "Engenheiro de IA OR Engenheiro de Machine Learning"
+    - "Cientista de Dados OR Data Scientist"
+  # Cota gratuita da JSearch: 200 req/mês. Custo ≈ queries × pages_per_query × 22 dias úteis.
+  # Rendimento por query: data/query_stats.jsonl (uma linha por query por execução).
+  country: "br"
+  date_posted: "3days"        # today | 3days | week | month
+  pages_per_query: 1
+  publishers: []              # [] = aceitar todos; o dedupe prefere a cópia do LinkedIn
+  remote_only: true           # pede só vagas remotas à JSearch (work_from_home=true)
+  include_international_remote: true   # vagas contractor remotas fora do BR
+
+filters:
+  modalities: ["remote"]      # remote | hybrid | onsite (híbrido/presencial só em hybrid_allowed_cities)
+  hybrid_allowed_cities: ["Rio de Janeiro"]
+  exclude_title_keywords: ["estágio", "estagiário", "intern", "trainee", "júnior", "junior", "jr"]
+  include_uncertain_contract: true    # vagas sem contrato explícito entram marcadas
+
+embeddings:
+  provider: "ollama"          # ollama | sentence-transformers
+  top_n: 40                   # quantas vão para o LLM (local = sem custo, só tempo)
+  cv_representation: "blocks_mean"   # blocks_mean | compact (usar compact com modelo fine-tunado)
+  ollama:
+    model: "bge-m3"           # multilíngue, sem prefixos especiais
+  sentence_transformers:
+    model: "BAAI/bge-m3"      # ou caminho local de um modelo fine-tunado, ex.: "models/bge-m3-elyas-v1"
+    device: "cuda"            # cuda | cpu
+    batch_size: 16
+    query_prefix: ""          # para modelos e5: "query: "
+    passage_prefix: ""        # para modelos e5: "passage: "
+
+llm:
+  provider: "ollama"          # ollama | anthropic
+  max_calls_per_run: 60
+  ollama:
+    host: "http://localhost:11434"
+    model: "qwen3.5:9b"       # ver seção 9.4 da SPEC para alternativas
+    num_ctx: 16384            # OBRIGATÓRIO: o padrão do Ollama trunca o prompt em silêncio
+    temperature: 0
+    think: false              # modo raciocínio; true = mais lento, às vezes mais preciso
+    keep_alive: "10m"
+    request_timeout_s: 180
+  anthropic:
+    model: "claude-haiku-5-5"
+
+scoring:
+  min_score_to_email: 50
+
+email:
+  send_when_empty: false
+  max_jobs: 30
+
+state:
+  prune_after_days: 60
