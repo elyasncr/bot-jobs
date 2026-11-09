@@ -5,6 +5,7 @@ data/history.jsonl
 data/query_stats.jsonl
 data/.last_run
 data/jobs.jsonl
+data/.dashboard_token
 data/eval/
 eval_report.md
 finetune_report.md

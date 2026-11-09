@@ -19,20 +19,20 @@ export interface LabelChange {
       <table>
         <thead>
           <tr>
-            <th>
+            <th class="sortable">
               <button type="button" (click)="toggle('date')">Data {{ arrow('date') }}</button>
             </th>
             <th>Vaga</th>
             <th>Local</th>
             <th>Fonte</th>
             <th>Contrato</th>
-            <th class="num">
+            <th class="num sortable">
               <button type="button" (click)="toggle('total')">Nota {{ arrow('total') }}</button>
             </th>
-            <th class="num">
+            <th class="num sortable">
               <button type="button" (click)="toggle('cosine')" title="Similaridade CV × vaga (embeddings)">Cos {{ arrow('cosine') }}</button>
             </th>
-            <th class="num">
+            <th class="num sortable">
               <button type="button" (click)="toggle('mine')">Minha {{ arrow('mine') }}</button>
             </th>
             <th>Etapa</th>
@@ -57,11 +57,11 @@ export interface LabelChange {
                 {{ row.location || '—' }}
                 <span class="muted">{{ modality[row.modality] }}</span>
               </td>
-              <td class="muted">{{ source(row) }}</td>
-              <td><span class="contract" [attr.data-pj]="row.pj_status">{{ contract[row.pj_status] }}</span></td>
-              <td class="num"><app-score-badge [total]="row.total" [estimate]="row.is_estimate" /></td>
-              <td class="num muted">{{ row.embedding_score === null ? '—' : row.embedding_score.toFixed(3) }}</td>
-              <td class="num">
+              <td class="src muted">{{ source(row) }}</td>
+              <td class="contract-cell"><span class="contract" [attr.data-pj]="row.pj_status">{{ contract[row.pj_status] }}</span></td>
+              <td class="num total"><app-score-badge [total]="row.total" [estimate]="row.is_estimate" /></td>
+              <td class="num cos muted">{{ row.embedding_score === null ? '—' : row.embedding_score.toFixed(3) }}</td>
+              <td class="num mine">
                 <app-label-input
                   [value]="row.my_score"
                   [state]="saveStates()[row.id] ?? 'idle'"
@@ -69,7 +69,7 @@ export interface LabelChange {
                   (save)="labelChange.emit({ row, score: $event })"
                 />
               </td>
-              <td>
+              <td class="stage-cell">
                 <span class="stage" [attr.data-stage]="row.stage">{{ stage[row.stage] }}</span>
                 @if (row.filter_reason) {
                   <span class="muted">· {{ reason[row.filter_reason] }}</span>
@@ -86,6 +86,7 @@ export interface LabelChange {
     </div>
   `,
   styles: `
+    :host { display: block; min-width: 0; }
     .scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
     th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-weight: 600; white-space: nowrap; }
@@ -112,6 +113,36 @@ export interface LabelChange {
     .stage[data-stage='emailed'] { color: var(--high); }
     .stage[data-stage='filtered'] { color: var(--muted); }
     .empty { text-align: center; color: var(--muted); padding: 32px; }
+
+    /* Celular: cada vaga vira um cartão; o cabeçalho vira uma barra de ordenação. */
+    @media (max-width: 720px) {
+      .scroll { overflow: visible; border: 0; background: none; }
+      table, tbody { display: block; }
+      thead { display: block; margin-bottom: 8px; }
+      thead tr { display: flex; flex-wrap: wrap; gap: 6px; }
+      thead th { display: none; position: static; padding: 0; border: 0; background: none; }
+      thead th.sortable { display: block; }
+      thead th.sortable button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+                                 background: var(--surface); font-size: 0.82rem; font-weight: 500; }
+      tbody tr {
+        display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px 10px; margin-bottom: 10px; padding: 12px;
+        grid-template-areas: 'job job total' 'loc loc mine' 'contract src stage' 'date date cos';
+        border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+      }
+      tbody td { padding: 0; border: 0; min-width: 0; text-align: left; }
+      .job { grid-area: job; min-width: 0; }
+      .total { grid-area: total; text-align: right; }
+      .loc { grid-area: loc; min-width: 0; font-size: 0.85rem; }
+      .loc .muted { display: inline; }
+      .mine { grid-area: mine; text-align: right; }
+      .contract-cell { grid-area: contract; font-size: 0.85rem; }
+      .src { grid-area: src; font-size: 0.85rem; }
+      .stage-cell { grid-area: stage; text-align: right; font-size: 0.85rem; }
+      .date { grid-area: date; font-size: 0.8rem; color: var(--muted); }
+      .cos { grid-area: cos; text-align: right; font-size: 0.8rem; }
+      .cos::before { content: 'cos '; }
+      .empty { display: block; }
+    }
   `,
 })
 export class JobsTable {

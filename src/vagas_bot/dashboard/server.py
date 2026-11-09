@@ -1,16 +1,22 @@
 """Local HTTP server (stdlib): JSON API under /api, the built Angular app everywhere else.
 
-Binds to 127.0.0.1 only. Static files never leave the dist folder; unknown routes without
-a file extension fall back to index.html (Angular routing).
+Default: 127.0.0.1 only. LAN mode (--lan) listens on the home network and requires an
+access code (cookie set by opening /?t=<code> once); requests from this PC stay free.
+Static files never leave the dist folder; routes without a file extension fall back to
+index.html (Angular routing).
 """
 
+import hmac
 import json
+import secrets
+import socket
 from functools import partial
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import SplitResult, parse_qs, unquote, urlencode, urlsplit, urlunsplit
 
 from vagas_bot.config import Settings
 from vagas_bot.dashboard import data
@@ -43,21 +49,85 @@ def find_dist(root: Path) -> Path | None:
     return None
 
 
+TOKEN_COOKIE = "vb_token"
+TOKEN_MAX_AGE_S = 365 * 24 * 3600
+DENIED_HTML = (
+    "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+    "<title>vagas-pj-bot</title><body style='font-family:system-ui;padding:24px'>"
+    "<h1>Acesso restrito</h1><p>Abra o link com o código de acesso que o comando "
+    "<code>vagas_bot dashboard --lan</code> mostra no terminal do PC.</p></body>"
+)
+
+
+def load_or_create_token(path: Path) -> str:
+    """Access code for LAN mode, kept across restarts so the phone bookmark keeps working."""
+    if path.is_file() and (token := path.read_text(encoding="utf-8").strip()):
+        return token
+    token = secrets.token_urlsafe(16)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(token, encoding="utf-8")
+    return token
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     server_version = "vagas-bot-dashboard"
 
-    def __init__(self, *args: Any, settings: Settings, dist: Path, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, settings: Settings, dist: Path, token: str | None = None, trust_local: bool = True,
+        **kwargs: Any,
+    ) -> None:
         self.settings = settings
         self.dist = dist.resolve()
+        self.token = token
+        self.trust_local = trust_local
         super().__init__(*args, **kwargs)
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 — assinatura da stdlib
         log.debug("%s %s", self.address_string(), format % args)
 
+    # --- acesso pela rede local ---
+
+    def _authorized(self) -> bool:
+        """No token (localhost mode) or a local request: free. Else the cookie must match."""
+        if self.token is None or (self.trust_local and self.client_address[0] in ("127.0.0.1", "::1")):
+            return True
+        cookies = SimpleCookie(self.headers.get("Cookie") or "")
+        sent = cookies[TOKEN_COOKIE].value if TOKEN_COOKIE in cookies else ""
+        return hmac.compare_digest(sent, self.token)
+
+    def _guard(self, url: SplitResult) -> bool:
+        """True = go on. Handles ?t=<token> (sets the cookie and redirects) and denials."""
+        if self.token is not None:
+            query = parse_qs(url.query)
+            given = (query.pop("t", None) or [""])[0]
+            if given and hmac.compare_digest(given, self.token):
+                clean = urlunsplit(("", "", url.path, urlencode(query, doseq=True), ""))
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", clean or "/")
+                self.send_header("Set-Cookie", f"{TOKEN_COOKIE}={self.token}; Max-Age={TOKEN_MAX_AGE_S}; "
+                                               "Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
+        if self._authorized():
+            return True
+        if url.path.startswith("/api/"):
+            self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Acesso restrito: abra o link com o código de acesso."})
+        else:
+            body = DENIED_HTML.encode("utf-8")
+            self.send_response(HTTPStatus.UNAUTHORIZED)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        return False
+
     # --- roteamento ---
 
     def do_GET(self) -> None:  # noqa: N802 — nome exigido pela stdlib
         url = urlsplit(self.path)
+        if not self._guard(url):
+            return
         if url.path.startswith("/api/"):
             query = parse_qs(url.query)
             routes = {
@@ -72,6 +142,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:  # noqa: N802
         url = urlsplit(self.path)
+        if not self._authorized():
+            self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Acesso restrito: abra o link com o código de acesso."})
+            return
         prefix = "/api/labels/"
         if not url.path.startswith(prefix) or len(url.path) == len(prefix):
             self._api(_not_found)
@@ -136,6 +209,27 @@ def _not_found() -> Any:
     raise DashboardError(404, "Rota não encontrada.")
 
 
-def make_server(settings: Settings, dist: Path, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
-    handler = partial(DashboardHandler, settings=settings, dist=dist)
+def make_server(
+    settings: Settings, dist: Path, host: str = "127.0.0.1", port: int = 8765, token: str | None = None,
+    trust_local: bool = True,
+) -> ThreadingHTTPServer:
+    """token=None: localhost only, no code. With a token (LAN mode), other devices need it."""
+    handler = partial(DashboardHandler, settings=settings, dist=dist, token=token, trust_local=trust_local)
     return ThreadingHTTPServer((host, port), handler)
+
+
+def lan_addresses() -> list[str]:
+    """Private IPv4 addresses of this PC (to print the phone URL). Sends no packets."""
+    found: list[str] = []
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))  # endereço de documentação: só escolhe a interface de saída
+            found.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        found += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    private = [ip for ip in dict.fromkeys(found) if ip.startswith(("192.168.", "10."))]
+    return private or [ip for ip in dict.fromkeys(found) if not ip.startswith("127.")]

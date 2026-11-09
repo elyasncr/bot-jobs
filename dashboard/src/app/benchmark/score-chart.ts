@@ -54,6 +54,7 @@ const PAD_TOP = 26;
     </div>
   `,
   styles: `
+    :host { display: block; min-width: 0; }
     .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.85rem; margin-bottom: 8px; }
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }

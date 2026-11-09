@@ -260,3 +260,62 @@ def test_save_label_without_note_keeps_existing_note(settings: Settings) -> None
     data.save_label(settings, job.id, {"score": 60, "note": "stack boa"})
     assert data.save_label(settings, job.id, {"score": 75})["my_note"] == "stack boa"
     assert evaluation.load_label_entries(settings.eval_dir / "labels.yaml")[job.id]["note"] == "stack boa"
+
+
+# --- modo rede local (--lan) ---
+
+from vagas_bot.dashboard.server import load_or_create_token  # noqa: E402
+
+
+@pytest.fixture
+def lan_server(settings: Settings, dist: Path) -> Iterator[tuple[str, int]]:
+    httpd = make_server(settings, dist, port=0, token="codigo-secreto", trust_local=False)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield httpd.server_address[0], httpd.server_address[1]
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def _raw(server: tuple[str, int], method: str, path: str, cookie: str = "") -> http.client.HTTPResponse:
+    conn = http.client.HTTPConnection(*server, timeout=10)
+    conn.request(method, path, body=b'{"score": 50}' if method == "PUT" else None,
+                 headers={"Cookie": cookie, "Content-Type": "application/json"} if cookie else {})
+    resp = conn.getresponse()
+    resp.read()
+    conn.close()
+    return resp
+
+
+def test_lan_requires_access_code(lan_server: tuple[str, int]) -> None:
+    assert _raw(lan_server, "GET", "/vagas").status == 401
+    assert _raw(lan_server, "GET", "/api/jobs").status == 401
+    assert _raw(lan_server, "PUT", "/api/labels/x").status == 401
+    assert _raw(lan_server, "GET", "/?t=errado").status == 401
+    assert _raw(lan_server, "GET", "/api/jobs", cookie="vb_token=errado").status == 401
+
+
+def test_lan_code_sets_cookie_and_redirects(lan_server: tuple[str, int]) -> None:
+    resp = _raw(lan_server, "GET", "/benchmark?t=codigo-secreto&x=1")
+    assert resp.status == 303 and resp.getheader("Location") == "/benchmark?x=1"
+    cookie = resp.getheader("Set-Cookie") or ""
+    assert "vb_token=codigo-secreto" in cookie and "HttpOnly" in cookie and "SameSite=Strict" in cookie
+    assert _raw(lan_server, "GET", "/api/jobs", cookie="vb_token=codigo-secreto").status == 200
+    assert _raw(lan_server, "GET", "/vagas", cookie="vb_token=codigo-secreto").status == 200
+
+
+def test_local_requests_skip_code(settings: Settings, dist: Path) -> None:
+    httpd = make_server(settings, dist, port=0, token="codigo-secreto")  # trust_local=True (padrão)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert _raw(httpd.server_address, "GET", "/api/jobs").status == 200
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_token_is_persisted(tmp_path: Path) -> None:
+    path = tmp_path / ".dashboard_token"
+    first = load_or_create_token(path)
+    assert len(first) >= 20 and load_or_create_token(path) == first

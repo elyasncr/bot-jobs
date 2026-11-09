@@ -376,9 +376,10 @@ def dashboard(
     config: ConfigOption = Path("config.yaml"),
     port: Annotated[int, typer.Option(min=0, max=65535, help="Porta local.")] = 8765,
     no_browser: Annotated[bool, typer.Option("--no-browser", help="Não abre o navegador.")] = False,
+    lan: Annotated[bool, typer.Option("--lan", help="Aceita a rede de casa (celular), com código de acesso.")] = False,
 ) -> None:
     """Tela local (vagas capturadas + benchmark) em http://127.0.0.1:<porta>."""
-    from vagas_bot.dashboard.server import find_dist, make_server  # noqa: PLC0415
+    from vagas_bot.dashboard.server import find_dist, lan_addresses, load_or_create_token, make_server  # noqa: PLC0415
 
     settings = _load(config)
     setup_logging(settings.logs_dir)
@@ -386,13 +387,20 @@ def dashboard(
     if dist is None:
         console.print("[red]A tela ainda não foi compilada.[/] Rode: cd dashboard && npm ci && npm run build")
         raise typer.Exit(1)
+    token = load_or_create_token(settings.data_dir / ".dashboard_token") if lan else None
     try:
-        httpd = make_server(settings, dist, port=port)
+        httpd = make_server(settings, dist, host="0.0.0.0" if lan else "127.0.0.1", port=port, token=token)  # noqa: S104
     except OSError as exc:
         console.print(f"[red]Não foi possível usar a porta {port}:[/] {exc}. Tente --port 8766.")
         raise typer.Exit(1) from exc
-    url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    bound = httpd.server_address[1]
+    url = f"http://127.0.0.1:{bound}/"
     console.print(f"[green]Dashboard em {url}[/] (Ctrl+C para encerrar)")
+    if lan:
+        console.print("No celular (mesma rede), abra uma vez o link abaixo; depois basta o endereço sem o código:")
+        for ip in lan_addresses():
+            console.print(f"  [bold]http://{ip}:{bound}/?t={token}[/]", soft_wrap=True)
+        console.print("[dim]Código em data/.dashboard_token (apague o arquivo para gerar outro).[/]")
     if not no_browser:
         import webbrowser  # noqa: PLC0415
 

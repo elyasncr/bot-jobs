@@ -72,6 +72,7 @@ export function bestModel(rows: ModelSummary[], value: (s: ModelSummary) => numb
     </div>
   `,
   styles: `
+    :host { display: block; min-width: 0; }
     .scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
     table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
     th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }

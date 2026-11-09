@@ -55,7 +55,10 @@ const SORT_KEYS: SortKey[] = ['date', 'total', 'cosine', 'mine'];
       <div><strong>{{ counts().labeled }}</strong><span>com nota minha</span></div>
     </section>
 
-    <form class="filters" (submit)="$event.preventDefault()">
+    <button type="button" class="toggle-filters" (click)="showFilters.set(!showFilters())" [attr.aria-expanded]="showFilters()">
+      {{ showFilters() ? 'Esconder filtros' : 'Filtros' }}@if (activeFilters()) { ({{ activeFilters() }} ativos)}
+    </button>
+    <form class="filters" [class.collapsed]="!showFilters()" (submit)="$event.preventDefault()">
       <input class="search" type="search" placeholder="Buscar título ou empresa" [value]="filters().q"
              (input)="patch({ q: $any($event.target).value })" aria-label="Buscar" />
 
@@ -161,6 +164,16 @@ const SORT_KEYS: SortKey[] = ['date', 'total', 'cosine', 'mine'];
     .chip:has(input:focus-visible) { outline: 2px solid var(--accent); }
     .link { all: unset; cursor: pointer; color: var(--accent); font-size: 0.85rem; }
     .muted { color: var(--muted); }
+    .toggle-filters { display: none; }
+    @media (max-width: 720px) {
+      .counters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .counters > div { padding: 8px 10px; }
+      .counters strong { font-size: 1.25rem; }
+      .toggle-filters { display: block; width: 100%; margin-bottom: 10px; padding: 8px; border: 1px solid var(--border);
+                        border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+      .filters.collapsed { display: none; }
+      .search { flex-basis: 100%; }
+    }
   `,
 })
 export class JobsPage {
@@ -177,6 +190,7 @@ export class JobsPage {
 
   protected readonly rows = signal<JobRow[]>([]);
   protected readonly loading = signal(true);
+  protected readonly showFilters = signal(false); // só tem efeito no celular (no desktop os filtros ficam sempre visíveis)
   protected readonly saveStates = signal<Record<string, SaveState>>({});
   protected readonly saveErrors = signal<Record<string, string>>({});
 
@@ -200,6 +214,7 @@ export class JobsPage {
       : sortRows(this.filtered(), this.sort().key, this.sort().dir),
   );
   protected readonly counts = computed(() => countsBy(this.filtered()));
+  protected readonly activeFilters = computed(() => Object.keys(filtersToParams(this.filters())).length);
   protected readonly sources = computed(() => [...new Set(this.rows().map((r) => r.source))].sort());
   protected readonly selected = computed(() => this.rows().find((r) => r.id === this.selectedId()) ?? null);
 

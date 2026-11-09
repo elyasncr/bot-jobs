@@ -76,6 +76,10 @@ uv run python -m vagas_bot dashboard                # abre http://127.0.0.1:8765
 - **Vagas:** contadores, filtros guardados na URL (dá para salvar o link), tabela ordenável e um painel com a descrição, as notas parciais do LLM, os pontos fortes e as lacunas. A sua nota (0–100) e o comentário gravam em `data/eval/labels.yaml`.
 - **Benchmark:** a mesma tabela do `eval_report.md`, com o melhor valor destacado, um gráfico de notas por vaga e por modelo, e as notas lado a lado. Ao salvar uma nota sua, o Spearman é recalculado.
 - **Privacidade:** o servidor só aceita conexões da sua máquina (127.0.0.1) e usa só a biblioteca padrão do Python.
+- **No celular (rede de casa):**
+  1. Rode uma vez, como administrador, `powershell -ExecutionPolicy Bypass -File scripts\allow_dashboard_lan.ps1`. Ele marca a rede como Privada e libera a porta 8765 só para a rede local.
+  2. Depois, rode `uv run python -m vagas_bot dashboard --lan`. O terminal mostra um link `http://<ip-do-pc>:8765/?t=<código>`: abra-o uma vez no celular, que fica autorizado por 1 ano (cookie). Outros aparelhos da rede sem o código recebem "acesso restrito". O código fica em `data/.dashboard_token`; apague o arquivo para gerar outro.
+  3. No celular, a tela de Vagas vira uma lista de cartões, e os filtros ficam atrás de um botão.
 - **Desenvolvimento:** `uv run python -m vagas_bot dashboard --no-browser` em um terminal e `cd dashboard; npm start` em outro.
 
 ## Agendamento (dias úteis, 11h)
