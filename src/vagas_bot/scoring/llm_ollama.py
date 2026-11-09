@@ -29,6 +29,8 @@ class OllamaScorer:
         self.name = f"ollama/{cfg.model}"
         self._client = ollama.Client(host=host, timeout=cfg.request_timeout_s)
         self._schema = LLMScoreOutput.model_json_schema()
+        self.calls = 0  # chamadas ao chat (inclui retries); usado pelo eval-models
+        self.invalid_attempts = 0  # respostas que não validaram no schema
 
     def healthcheck(self) -> None:
         try:
@@ -48,11 +50,13 @@ class OllamaScorer:
                 return LLMScoreOutput.model_validate_json(content)
             except ValidationError as exc:
                 last_error = exc
+                self.invalid_attempts += 1
                 log.warning("JSON inválido do LLM (tentativa %d/%d) para '%s': %s",
                             attempt, MAX_ATTEMPTS, job.title, _short(exc))
         raise LLMInvalidOutput(f"JSON inválido após {MAX_ATTEMPTS} tentativas: {_short(last_error)}")
 
     def _chat(self, messages: list[dict[str, str]]) -> str:
+        self.calls += 1
         try:
             response = self._client.chat(
                 model=self.cfg.model,

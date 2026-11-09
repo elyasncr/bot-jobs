@@ -153,6 +153,14 @@ class Settings:
         return self.data_dir / "query_stats.jsonl"
 
     @property
+    def jobs_archive_path(self) -> Path:
+        return self.data_dir / "jobs.jsonl"
+
+    @property
+    def eval_dir(self) -> Path:
+        return self.data_dir / "eval"
+
+    @property
     def logs_dir(self) -> Path:
         return self.root / "logs"
 

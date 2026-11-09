@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from vagas_bot.archive import append_archive, archive_records
 from vagas_bot.config import ConfigError, Settings, missing_env, required_env
 from vagas_bot.cv import load_cv, section_titles
 from vagas_bot.embeddings.base import Embedder, get_embedder
@@ -237,7 +238,7 @@ def run_pipeline(
     after_filters = jobs
 
     embedder = embedder or get_embedder(settings)
-    jobs = embedding_stage(jobs, embedder, cv_md)
+    jobs = embedded = embedding_stage(jobs, embedder, cv_md)
     if opts.no_llm:
         log.info("--no-llm: ranking só pela estimativa dos embeddings.")
     else:
@@ -245,6 +246,7 @@ def run_pipeline(
         if not opts.dry_run:
             record_history(settings, jobs, embedder.name)
 
+    processed = _merge_by_id(embedded, jobs)  # com notas; inclui as que o filtro final tira
     jobs = final_contract_filter(jobs, cfg.filters.include_uncertain_contract)
     ranked = rank(jobs, cfg.scoring.min_score_to_email, cfg.email.max_jobs)
     stats.emailed = len(ranked)
@@ -276,8 +278,26 @@ def run_pipeline(
         log.error("Falha no envio do email: estado NÃO gravado (as vagas voltam na próxima execução).")
         return stats
     persist_state(settings, seen, evaluated)
+    archive_run(settings, after_dedupe, processed, ranked)
     write_last_run(settings.last_run_path, date.today())
     return stats
+
+
+def _merge_by_id(base: list[Job], updates: list[Job]) -> list[Job]:
+    """Jobs of `base`, replaced by their scored copy from `updates` when there is one."""
+    newer = {job.id: job for job in updates}
+    return [newer.get(job.id, job) for job in base]
+
+
+def archive_run(
+    settings: Settings, after_dedupe: list[Job], processed: list[Job], ranked: list[RankedJob]
+) -> None:
+    records = archive_records(
+        after_dedupe, processed, {r.job.id for r in ranked}, settings.config.filters, date.today()
+    )
+    append_archive(settings.jobs_archive_path, records)
+    if records:
+        log.info("Arquivo de vagas: %d vagas anexadas a %s.", len(records), settings.jobs_archive_path.name)
 
 
 def already_ran_today(settings: Settings, opts: RunOptions) -> bool:

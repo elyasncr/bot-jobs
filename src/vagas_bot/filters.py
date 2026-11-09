@@ -184,6 +184,17 @@ def final_contract_filter(jobs: list[Job], include_uncertain: bool) -> list[Job]
 # --- all hard filters -----------------------------------------------------------------
 
 
+def filter_reason(job: Job, cfg: FiltersConfig) -> str | None:
+    """Which hard filter drops this job (None = it passes). Used by the jobs archive."""
+    if not filter_title([job], cfg.exclude_title_keywords):
+        return "title"
+    if not keep_by_modality(job, cfg):
+        return "modality"
+    if classify_pj(job) is PJStatus.CLT:
+        return "clt"
+    return None
+
+
 def apply_filters(jobs: list[Job], cfg: FiltersConfig) -> list[Job]:
     steps = [
         ("título", lambda js: filter_title(js, cfg.exclude_title_keywords)),

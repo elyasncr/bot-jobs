@@ -238,3 +238,20 @@ def test_doctor_reports_missing_model(project_dir: Path, monkeypatch: pytest.Mon
     assert by_name["Modelo embeddings"].status is doctor.Status.OK
     assert by_name["Modelo LLM"].status is doctor.Status.FAIL
     assert "ollama pull qwen3.5:9b" in by_name["Modelo LLM"].detail
+
+
+def test_run_archives_all_new_jobs(project_dir: Path, fake_sources: FakeSource) -> None:
+    fake_sources.jobs = [_job(1), _job(2), make_job(title="AI Engineer Junior", company="X")]
+    result = runner.invoke(app, ["run", "--config", str(project_dir / "config.yaml")])
+    assert result.exit_code == 0, result.output
+    lines = (project_dir / "data" / "jobs.jsonl").read_text(encoding="utf-8").splitlines()
+    records = {r["title"]: r for r in map(json.loads, lines)}
+    assert records["AI Engineer 1"]["stage"] == "emailed" and records["AI Engineer 1"]["score"]["total"] > 0
+    assert records["AI Engineer Junior"]["stage"] == "filtered"
+    assert records["AI Engineer Junior"]["filter_reason"] == "title"
+
+
+def test_dry_run_does_not_archive(project_dir: Path, fake_sources: FakeSource) -> None:
+    result = runner.invoke(app, ["run", "--dry-run", "--config", str(project_dir / "config.yaml")])
+    assert result.exit_code == 0, result.output
+    assert not (project_dir / "data" / "jobs.jsonl").exists()

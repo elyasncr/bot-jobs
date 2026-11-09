@@ -24,6 +24,19 @@ uv run python -m vagas_bot run --force       # roda de novo no mesmo dia
 uv run pytest                                # testes (sem chamadas reais)
 ```
 
+Cada execução real (sem `--dry-run`) anexa a `data/jobs.jsonl` **todas** as vagas novas, com a etapa em que pararam (`filtered` + motivo, `evaluated`, `emailed`) e as notas. Esse arquivo não é versionado.
+
+## Comparação de modelos (Fase 8)
+
+```powershell
+uv run python -m vagas_bot eval-snapshot                    # salva 15 vagas em data/eval/jobs/ (5 req. da JSearch, janela de 1 mês)
+uv run python -m vagas_bot eval-snapshot --from-archive     # idem, a partir de data/jobs.jsonl (sem gastar cota)
+uv run python -m vagas_bot eval-models qwen3.5:9b qwen3:14b gemma4:12b   # 2 rodadas por vaga → eval_report.md
+uv run python -m vagas_bot eval-report                      # regera o relatório (ex.: depois de preencher labels.yaml)
+```
+
+O relatório mostra, por modelo: tempo por vaga, tempo de carga, VRAM, taxa de JSON inválido, variação da nota entre as rodadas, respostas "CLT" sem evidência no texto e as notas lado a lado. Para medir a qualidade **contra você**, preencha `score` (0–100) em `data/eval/labels.yaml` e rode `eval-report`: entra a correlação de Spearman entre cada modelo e as suas notas, sem chamar os modelos de novo. Os resultados brutos ficam em `data/eval/results/`. O `config.yaml` nunca é alterado: a troca de modelo é manual.
+
 ## Agendamento (dias úteis, 11h)
 
 O script [scripts/run_daily.ps1](scripts/run_daily.ps1) entra na pasta do projeto, inicia o `ollama serve` se o Ollama não responder (espera até 30 s), roda o bot e grava tudo em `logs/YYYY-MM-DD.log`. Uma trava em `data/.last_run` impede duas execuções bem-sucedidas no mesmo dia.
@@ -53,3 +66,4 @@ A tarefa é criada com a opção **"Executar a tarefa assim que possível após 
 - [x] Fase 5 — Scorer Ollama + histórico
 - [x] Fase 6 — Email
 - [x] Fase 7 — Agendamento local (dias úteis, 11h)
+- [x] Fase 8 — Comparação de modelos (`eval-models`)

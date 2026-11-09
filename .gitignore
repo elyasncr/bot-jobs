@@ -4,6 +4,9 @@ data/seen.json
 data/history.jsonl
 data/query_stats.jsonl
 data/.last_run
+data/jobs.jsonl
+data/eval/
+eval_report.md
 models/
 logs/
 preview.html
