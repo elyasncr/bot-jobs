@@ -145,6 +145,10 @@ class Settings:
         return self.data_dir / "history.jsonl"
 
     @property
+    def last_run_path(self) -> Path:
+        return self.data_dir / ".last_run"
+
+    @property
     def query_stats_path(self) -> Path:
         return self.data_dir / "query_stats.jsonl"
 

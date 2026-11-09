@@ -1,0 +1,29 @@
+Vagas PJ · {{ date }}
+{{ stats.collected }} coletadas · {{ stats.after_filters }} após filtros · {{ stats.llm_scored }} avaliadas pelo LLM · {{ count }} {{ "enviada" if count == 1 else "enviadas" }}
+{% if not groups %}
+
+Nenhuma vaga nova hoje.
+{% endif %}
+{% for group in groups %}
+
+== {{ group.label }} ({{ group.range }}) ==
+{% for c in group.cards %}
+
+{{ c.total }}% · {{ c.title }} [{{ c.contract }}{% if c.is_estimate %}, estimativa{% endif %}{% if c.low_fidelity %}, baixa fidelidade{% endif %}]
+{{ c.company }} · {{ c.place }}{% if c.publisher %} · via {{ c.publisher }}{% endif %}{% if c.posted %} · {{ c.posted }}{% endif %}
+
+{{ c.url }}
+{% if c.summary %}
+{{ c.summary }}
+{% endif %}
+{% for s in c.strengths %}
+  + {{ s }}
+{% endfor %}
+{% for g in c.gaps %}
+  - {{ g }}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+--
+Modelo: {{ model }} · Execução: {{ duration }} · Média: {{ avg }} · Chamadas à JSearch: {{ stats.jsearch_requests }}

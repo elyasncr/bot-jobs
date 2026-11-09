@@ -9,12 +9,13 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
-from vagas_bot.config import ConfigError, Settings, load_settings
+from vagas_bot.config import ConfigError, Settings, load_settings, missing_env
 from vagas_bot.cv import CVError
 from vagas_bot.doctor import Status, run_checks
 from vagas_bot.embeddings.base import EmbedderUnavailable
 from vagas_bot.log import get_logger, setup_logging
-from vagas_bot.pipeline import RunOptions, run_pipeline
+from vagas_bot.notify.sample import sample_ranked
+from vagas_bot.pipeline import RunOptions, RunStats, run_pipeline, send_notification
 from vagas_bot.storage import StorageError
 
 
@@ -57,18 +58,37 @@ def run(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Não envia email nem grava estado; salva preview.html.")] = False,
     no_llm: Annotated[bool, typer.Option("--no-llm", help="Só embeddings, sem LLM.")] = False,
     limit: Annotated[int | None, typer.Option("--limit", min=1, help="Limita vagas processadas (debug).")] = None,
+    force: Annotated[bool, typer.Option("--force", help="Roda mesmo que já tenha rodado hoje.")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """Pipeline completo."""
     settings = _load(config)
     log_file = setup_logging(settings.logs_dir, verbose=verbose)
     log = get_logger()
-    log.info("Execução iniciada (dry_run=%s, no_llm=%s, limit=%s). Log: %s", dry_run, no_llm, limit, log_file)
+    log.info("Execução iniciada (dry_run=%s, no_llm=%s, limit=%s, force=%s). Log: %s",
+             dry_run, no_llm, limit, force, log_file)
     try:
-        run_pipeline(settings, RunOptions(dry_run=dry_run, no_llm=no_llm, limit=limit))
+        run_pipeline(settings, RunOptions(dry_run=dry_run, no_llm=no_llm, limit=limit, force=force))
     except (ConfigError, CVError, StorageError, EmbedderUnavailable) as exc:
         log.error("%s", exc)
         raise typer.Exit(1) from exc
+
+
+@app.command("test-email")
+def test_email(config: ConfigOption = Path("config.yaml")) -> None:
+    """Envia um email de teste com 3 vagas fictícias (uma por faixa)."""
+    settings = _load(config)
+    setup_logging(settings.logs_dir)
+    missing = missing_env(settings, ["GMAIL_USER", "GMAIL_APP_PASSWORD", "EMAIL_TO"])
+    if missing:
+        console.print(f"[red]Variáveis ausentes:[/] {', '.join(missing)}")
+        raise typer.Exit(1)
+    stats = RunStats(collected=42, after_dedupe=30, after_filters=12, sent_to_llm=12, llm_scored=12,
+                     jsearch_requests=5, llm_model=f"ollama/{settings.config.llm.ollama.model}",
+                     llm_avg_s=2.8, elapsed_s=95.0)
+    if not send_notification(sample_ranked(3), stats, settings, subject_prefix="[TESTE] "):
+        raise typer.Exit(1)
+    console.print(f"[green]Email de teste enviado para {settings.secrets.email_to}.[/]")
 
 
 @app.command()

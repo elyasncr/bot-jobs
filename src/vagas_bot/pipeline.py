@@ -13,7 +13,14 @@ from vagas_bot.embeddings.base import Embedder, get_embedder
 from vagas_bot.filters import apply_filters, dedupe, final_contract_filter
 from vagas_bot.log import get_logger
 from vagas_bot.models import Job
-from vagas_bot.notify.email import render_html
+from vagas_bot.notify.email import (
+    GMAIL_CLIP_BYTES,
+    EmailError,
+    build_message,
+    html_size,
+    render_html,
+    send_email,
+)
 from vagas_bot.query_stats import append_query_stats, build_query_stats, log_query_stats
 from vagas_bot.scoring.llm_base import LLMScorer, get_scorer
 from vagas_bot.scoring.llm_stage import llm_stage
@@ -28,7 +35,9 @@ from vagas_bot.storage import (
     load_seen,
     mark_seen,
     prune_seen,
+    read_last_run,
     save_seen,
+    write_last_run,
 )
 
 log = get_logger("pipeline")
@@ -39,6 +48,7 @@ class RunOptions:
     dry_run: bool = False
     no_llm: bool = False
     limit: int | None = None
+    force: bool = False  # ignora a trava de uma execução por dia
 
 
 @dataclass
@@ -54,13 +64,14 @@ class RunStats:
     llm_model: str | None = None
     llm_avg_s: float = 0.0
     elapsed_s: float = 0.0
+    skipped: bool = False  # True quando a trava diária impediu a execução
 
 
 def validate_env(settings: Settings, opts: RunOptions) -> None:
     names = required_env(
         settings.config,
         collect=True,
-        send_email=False,  # Fase 6: passa a ser `not opts.dry_run`
+        send_email=not opts.dry_run,
         use_llm=not opts.no_llm,
     )
     missing = missing_env(settings, names)
@@ -137,9 +148,22 @@ def scoring_stage(
     return scored
 
 
-def send_notification(ranked: list[RankedJob], stats: RunStats) -> bool:
-    """Fase 6: envio real por SMTP. Até lá, só registra no log e considera sucesso."""
-    log.warning("Envio de email ainda não implementado (Fase 6): %d vagas seriam enviadas.", len(ranked))
+def send_notification(
+    ranked: list[RankedJob], stats: RunStats, settings: Settings, subject_prefix: str = ""
+) -> bool:
+    """Build and send the email. Returns False (and logs) on failure — state is then not saved."""
+    secrets = settings.secrets
+    assert secrets.gmail_user and secrets.gmail_app_password and secrets.email_to  # validate_env
+    msg = build_message(ranked, stats, secrets.gmail_user, secrets.email_to, subject_prefix)
+    size = html_size(msg)
+    if size > GMAIL_CLIP_BYTES:
+        log.warning("HTML do email tem %d KB: o Gmail pode cortar a mensagem (limite ~102 KB).", size // 1000)
+    try:
+        send_email(msg, secrets.gmail_user, secrets.gmail_app_password.get_secret_value())
+    except EmailError as exc:
+        log.error("%s", exc)
+        return False
+    log.info("Email enviado: \"%s\" (%d KB).", msg["Subject"], size // 1000)
     return True
 
 
@@ -189,6 +213,9 @@ def run_pipeline(
     t0 = time.perf_counter()
     stats = RunStats()
     cfg = settings.config
+    if already_ran_today(settings, opts):
+        stats.skipped = True
+        return stats
     validate_env(settings, opts)
 
     cv_md = load_cv(settings.cv_path)
@@ -245,9 +272,20 @@ def run_pipeline(
 
     if not ranked and not cfg.email.send_when_empty:
         log.info("Nenhuma vaga nova e send_when_empty=false: email não enviado.")
-        persist_state(settings, seen, evaluated)
-    elif send_notification(ranked, stats):
-        persist_state(settings, seen, evaluated)
-    else:
+    elif not send_notification(ranked, stats, settings):
         log.error("Falha no envio do email: estado NÃO gravado (as vagas voltam na próxima execução).")
+        return stats
+    persist_state(settings, seen, evaluated)
+    write_last_run(settings.last_run_path, date.today())
     return stats
+
+
+def already_ran_today(settings: Settings, opts: RunOptions) -> bool:
+    """Lock: one successful run per day (ignored by --dry-run and --force)."""
+    if opts.dry_run or opts.force:
+        return False
+    if read_last_run(settings.last_run_path) == date.today():
+        log.info("Já houve uma execução bem-sucedida hoje (%s). Nada a fazer; use --force para rodar de novo.",
+                 settings.last_run_path.name)
+        return True
+    return False

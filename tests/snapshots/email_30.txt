@@ -1,0 +1,253 @@
+Vagas PJ · 09/11/2026
+42 coletadas · 12 após filtros · 12 avaliadas pelo LLM · 30 enviadas
+
+== Alta aderência (≥ 80%) ==
+
+88% · Senior AI Engineer (LLMs & RAG) [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/0
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+87% · Senior AI Engineer (LLMs & RAG) #3 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/3
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+86% · Senior AI Engineer (LLMs & RAG) #6 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/6
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+85% · Senior AI Engineer (LLMs & RAG) #9 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/9
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+84% · Senior AI Engineer (LLMs & RAG) #12 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/12
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+83% · Senior AI Engineer (LLMs & RAG) #15 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/15
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+82% · Senior AI Engineer (LLMs & RAG) #18 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/18
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+81% · Senior AI Engineer (LLMs & RAG) #21 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/21
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+80% · Senior AI Engineer (LLMs & RAG) #24 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/24
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+== Boa (65–79%) ==
+
+79% · Senior AI Engineer (LLMs & RAG) #27 [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/27
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+72% · Machine Learning Engineer - Remote [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/1
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+71% · Machine Learning Engineer - Remote #4 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/4
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+70% · Machine Learning Engineer - Remote #7 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/7
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+69% · Machine Learning Engineer - Remote #10 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/10
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+68% · Machine Learning Engineer - Remote #13 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/13
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+67% · Machine Learning Engineer - Remote #16 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/16
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+66% · Machine Learning Engineer - Remote #19 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/19
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+65% · Machine Learning Engineer - Remote #22 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/22
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+== Possível (50–64%) ==
+
+64% · Machine Learning Engineer - Remote #25 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/25
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+63% · Machine Learning Engineer - Remote #28 [CLT ou PJ]
+Empresa Exemplo B · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/28
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+58% · Data Scientist (GenAI) [Não informado, estimativa, baixa fidelidade]
+Empresa Exemplo C · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/2
+
+57% · Data Scientist (GenAI) #5 [Não informado, estimativa]
+Empresa Exemplo C · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/5
+
+56% · Data Scientist (GenAI) #8 [Não informado, estimativa, baixa fidelidade]
+Empresa Exemplo C · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/8
+
+55% · Data Scientist (GenAI) #11 [Não informado, estimativa]
+Empresa Exemplo C · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/11
+
+54% · Data Scientist (GenAI) #14 [Não informado, estimativa, baixa fidelidade]
+Empresa Exemplo C · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/14
+
+53% · Data Scientist (GenAI) #17 [Não informado, estimativa]
+Empresa Exemplo C · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/17
+
+52% · Data Scientist (GenAI) #20 [Não informado, estimativa, baixa fidelidade]
+Empresa Exemplo C · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/20
+
+51% · Data Scientist (GenAI) #23 [Não informado, estimativa]
+Empresa Exemplo C · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/23
+
+50% · Data Scientist (GenAI) #26 [Não informado, estimativa, baixa fidelidade]
+Empresa Exemplo C · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/26
+
+== Abaixo de 50% (0–49%) ==
+
+49% · Data Scientist (GenAI) #29 [Não informado, estimativa]
+Empresa Exemplo C · Qualquer lugar, Remoto · via Glassdoor · 08/11
+https://example.com/vaga/29
+
+--
+Modelo: ollama/qwen3.5:9b · Execução: 1min 35s · Média: 2.8s/vaga · Chamadas à JSearch: 5

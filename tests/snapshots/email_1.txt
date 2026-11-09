@@ -1,0 +1,17 @@
+Vagas PJ · 09/11/2026
+42 coletadas · 12 após filtros · 12 avaliadas pelo LLM · 1 enviada
+
+== Alta aderência (≥ 80%) ==
+
+88% · Senior AI Engineer (LLMs & RAG) [PJ]
+Empresa Exemplo A · Qualquer lugar, Remoto · via LinkedIn · 08/11
+https://example.com/vaga/0
+Boa aderência técnica; a senioridade pedida está um pouco acima.
+  + LLMs e RAG em produção
+  + LangGraph e agentes
+  + AWS Bedrock
+  - Kubernetes não citado no CV
+  - Inglês fluente desejável
+
+--
+Modelo: ollama/qwen3.5:9b · Execução: 1min 35s · Média: 2.8s/vaga · Chamadas à JSearch: 5

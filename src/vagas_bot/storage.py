@@ -61,6 +61,18 @@ def save_seen(path: Path, seen: dict[str, str]) -> None:
     atomic_write_text(path, json.dumps(dict(sorted(seen.items())), indent=0, ensure_ascii=False))
 
 
+def read_last_run(path: Path) -> date | None:
+    """Date of the last successful run (lock against running twice a day)."""
+    try:
+        return date.fromisoformat(path.read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def write_last_run(path: Path, day: date) -> None:
+    atomic_write_text(path, day.isoformat())
+
+
 def history_record(job: Job, job_text: str, embedder: str, today: date) -> dict[str, object]:
     """One line of history.jsonl. Never includes CV data."""
     assert job.score is not None

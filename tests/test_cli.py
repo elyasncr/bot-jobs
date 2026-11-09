@@ -1,5 +1,7 @@
 import json
+from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from helpers import FakeEmbedder, FakeScorer, make_job
@@ -10,6 +12,7 @@ from vagas_bot.__main__ import app
 from vagas_bot.config import SearchConfig, load_settings
 from vagas_bot.embeddings.base import EmbedderUnavailable
 from vagas_bot.models import Job
+from vagas_bot.notify.email import EmailError
 from vagas_bot.ollama_utils import OllamaUnavailable
 
 runner = CliRunner()
@@ -20,8 +23,10 @@ class FakeSource:
 
     def __init__(self, jobs: list[Job]) -> None:
         self.jobs = jobs
+        self.fetches = 0
 
     def fetch(self, cfg: SearchConfig) -> list[Job]:
+        self.fetches += 1
         return self.jobs
 
 
@@ -30,7 +35,16 @@ def _job(n: int) -> Job:
 
 
 @pytest.fixture
-def fake_sources(monkeypatch: pytest.MonkeyPatch) -> FakeSource:
+def sent_emails(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    for name, value in [("GMAIL_USER", "bot@gmail.com"), ("GMAIL_APP_PASSWORD", "app-pass"), ("EMAIL_TO", "eu@gmail.com")]:
+        monkeypatch.setenv(name, value)
+    sent: list[Any] = []
+    monkeypatch.setattr(pipeline, "send_email", lambda msg, user, password: sent.append(msg))
+    return sent
+
+
+@pytest.fixture
+def fake_sources(monkeypatch: pytest.MonkeyPatch, sent_emails: list[Any]) -> FakeSource:
     monkeypatch.setenv("RAPIDAPI_KEY", "test-key")
     source = FakeSource([_job(1), _job(2), _job(3)])
     monkeypatch.setattr(pipeline, "build_sources", lambda settings: [source])
@@ -53,6 +67,18 @@ def test_run_limit(project_dir: Path, fake_sources: FakeSource) -> None:
     assert result.exit_code == 0, result.output
     preview = (project_dir / "preview.html").read_text(encoding="utf-8")
     assert "AI Engineer 1" in preview and "AI Engineer 2" not in preview
+
+
+def test_run_without_dry_run_requires_gmail_env(project_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RAPIDAPI_KEY", "k")
+    result = runner.invoke(app, ["run", "--config", str(project_dir / "config.yaml")])
+    assert result.exit_code == 1
+
+
+def test_test_email_command(project_dir: Path, sent_emails: list[Any]) -> None:
+    result = runner.invoke(app, ["test-email", "--config", str(project_dir / "config.yaml")])
+    assert result.exit_code == 0, result.output
+    assert sent_emails[0]["Subject"].startswith("[TESTE] [Vagas PJ] 3 novas vagas")
 
 
 def test_run_requires_rapidapi_key(project_dir: Path) -> None:
@@ -100,9 +126,14 @@ def test_embedder_down_aborts_without_state(
     assert not (project_dir / "data" / "seen.json").exists()
 
 
-def test_full_run_writes_history_and_query_stats(project_dir: Path, fake_sources: FakeSource) -> None:
+def test_full_run_writes_history_and_query_stats(
+    project_dir: Path, fake_sources: FakeSource, sent_emails: list[Any]
+) -> None:
     result = runner.invoke(app, ["run", "--config", str(project_dir / "config.yaml")])
     assert result.exit_code == 0, result.output
+    assert len(sent_emails) == 1
+    assert sent_emails[0]["Subject"].startswith("[Vagas PJ] 3 novas vagas")
+    assert sent_emails[0]["To"] == "eu@gmail.com"
     history = [json.loads(line) for line in (project_dir / "data" / "history.jsonl").read_text(encoding="utf-8").splitlines()]
     assert len(history) == 3 and {h["total"] for h in history} == {78}
     assert all("Fulano" not in json.dumps(h) for h in history)  # nunca dados do CV
@@ -130,6 +161,34 @@ def test_no_llm_never_calls_scorer(
     assert not (project_dir / "data" / "history.jsonl").exists()
 
 
+def test_second_run_same_day_is_skipped(
+    project_dir: Path, fake_sources: FakeSource, sent_emails: list[Any]
+) -> None:
+    args = ["run", "--config", str(project_dir / "config.yaml")]
+    assert runner.invoke(app, args).exit_code == 0
+    assert (project_dir / "data" / ".last_run").read_text(encoding="utf-8") == date.today().isoformat()
+    fake_sources.jobs = [_job(9)]
+    second = runner.invoke(app, args)
+    assert second.exit_code == 0
+    assert fake_sources.fetches == 1 and len(sent_emails) == 1  # nem coletou, nem enviou
+
+    forced = runner.invoke(app, [*args, "--force"])
+    assert forced.exit_code == 0
+    assert fake_sources.fetches == 2 and len(sent_emails) == 2
+
+
+def test_dry_run_ignores_and_does_not_write_lock(project_dir: Path, fake_sources: FakeSource) -> None:
+    (project_dir / "data" / ".last_run").write_text(date.today().isoformat(), encoding="utf-8")
+    result = runner.invoke(app, ["run", "--dry-run", "--config", str(project_dir / "config.yaml")])
+    assert result.exit_code == 0 and fake_sources.fetches == 1
+
+
+def test_lock_from_yesterday_does_not_block(project_dir: Path, fake_sources: FakeSource) -> None:
+    (project_dir / "data" / ".last_run").write_text((date.today() - timedelta(days=1)).isoformat(), encoding="utf-8")
+    assert runner.invoke(app, ["run", "--config", str(project_dir / "config.yaml")]).exit_code == 0
+    assert fake_sources.fetches == 1
+
+
 def test_dry_run_does_not_write_state(project_dir: Path, fake_sources: FakeSource) -> None:
     result = runner.invoke(app, ["run", "--dry-run", "--config", str(project_dir / "config.yaml")])
     assert result.exit_code == 0, result.output
@@ -139,10 +198,14 @@ def test_dry_run_does_not_write_state(project_dir: Path, fake_sources: FakeSourc
 def test_failed_notification_does_not_write_state(
     project_dir: Path, fake_sources: FakeSource, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(pipeline, "send_notification", lambda jobs, stats: False)
+    def fail(msg: Any, user: str, password: str) -> None:
+        raise EmailError("Falha no envio SMTP: timeout")
+
+    monkeypatch.setattr(pipeline, "send_email", fail)
     result = runner.invoke(app, ["run", "--config", str(project_dir / "config.yaml")])
     assert result.exit_code == 0, result.output
     assert not (project_dir / "data" / "seen.json").exists()
+    assert not (project_dir / "data" / ".last_run").exists()  # falhou → pode rodar de novo hoje
 
 
 def test_run_fails_clearly_without_cv(project_dir: Path, fake_sources: FakeSource) -> None:

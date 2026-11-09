@@ -1,23 +1,56 @@
 <!doctype html>
 <html lang="pt-BR">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Vagas PJ</title></head>
-<body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;background:#f4f5f7;color:#1f2328;">
-  <h1 style="font-size:20px;margin:0 0 8px;">Vagas PJ — {{ stats.started_at.strftime('%d/%m/%Y') }}</h1>
-  <p style="font-size:13px;color:#57606a;margin:0 0 16px;">
-    Coletadas: {{ stats.collected }} · Após filtros: {{ stats.after_filters }} ·
-    Avaliadas pelo LLM: {{ stats.sent_to_llm }} · Enviadas: {{ stats.emailed }}
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Vagas PJ — {{ date }}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2328;">
+<div style="max-width:640px;margin:0 auto;padding:16px 12px;">
+
+  <h1 style="font-size:20px;line-height:1.3;margin:0 0 4px;">Vagas PJ · {{ date }}</h1>
+  <p style="font-size:13px;line-height:1.5;color:#57606a;margin:0 0 16px;">
+    {{ stats.collected }} coletadas · {{ stats.after_filters }} após filtros ·
+    {{ stats.llm_scored }} avaliadas pelo LLM · <b style="color:#1f2328;">{{ count }} {{ "enviada" if count == 1 else "enviadas" }}</b>
   </p>
-  {% if not ranked %}
-  <p style="font-size:14px;">Nenhuma vaga nova.</p>
+
+  {% if not groups %}
+  <p style="font-size:14px;background:#ffffff;border-radius:8px;padding:16px;margin:0 0 12px;">Nenhuma vaga nova hoje.</p>
   {% endif %}
-  {% for item in ranked %}
-  {% set job = item.job %}
-  <div style="background:#ffffff;border-radius:8px;padding:12px;margin:0 0 12px;">
-    <span style="display:inline-block;font-size:13px;font-weight:bold;color:#ffffff;background:#0969da;border-radius:12px;padding:2px 10px;">{{ item.total }}%</span>
-    {% if item.is_estimate %}<span style="font-size:12px;color:#9a6700;">estimativa</span>{% endif %}
-    <div style="margin-top:6px;"><a href="{{ job.url }}" style="font-size:16px;font-weight:bold;color:#0969da;text-decoration:none;">{{ job.title }}</a></div>
-    <div style="font-size:13px;color:#57606a;">{{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}{% if job.publisher %} · {{ job.publisher }}{% endif %}</div>
+
+  {% for group in groups %}
+  <h2 style="font-size:15px;margin:20px 0 8px;color:{{ group.color }};">{{ group.label }} <span style="font-weight:normal;color:#57606a;">({{ group.range }})</span></h2>
+  {% for c in group.cards %}
+  <div style="background:#ffffff;border-radius:8px;border-left:4px solid {{ c.color }};padding:12px 14px;margin:0 0 12px;">
+    <div style="margin:0 0 6px;">
+      <span style="display:inline-block;font-size:13px;font-weight:bold;color:#ffffff;background:{{ c.color }};border-radius:12px;padding:2px 10px;margin:0 4px 4px 0;">{{ c.total }}%</span>
+      <span style="display:inline-block;font-size:12px;color:#1f2328;background:#eaeef2;border-radius:12px;padding:2px 8px;margin:0 4px 4px 0;">{{ c.contract }}</span>
+      {% if c.is_estimate %}<span style="display:inline-block;font-size:12px;color:#9a6700;background:#fff8c5;border-radius:12px;padding:2px 8px;margin:0 4px 4px 0;">estimativa</span>{% endif %}
+      {% if c.low_fidelity %}<span style="display:inline-block;font-size:12px;color:#57606a;background:#eaeef2;border-radius:12px;padding:2px 8px;margin:0 4px 4px 0;">baixa fidelidade</span>{% endif %}
+    </div>
+    <a href="{{ c.url }}" style="font-size:16px;line-height:1.35;font-weight:bold;color:#0969da;text-decoration:none;">{{ c.title }}</a>
+    <div style="font-size:13px;line-height:1.5;color:#57606a;margin:2px 0 0;">
+      {{ c.company }} · {{ c.place }}{% if c.publisher %} · via {{ c.publisher }}{% endif %}{% if c.posted %} · {{ c.posted }}{% endif %}
+    </div>
+    {% if c.summary %}<p style="font-size:14px;line-height:1.45;margin:8px 0 0;">{{ c.summary }}</p>{% endif %}
+    {% if c.strengths %}
+    <div style="font-size:13px;line-height:1.45;margin:8px 0 0;">
+      {% for s in c.strengths %}<div style="color:#1a7f37;">✓ <span style="color:#1f2328;">{{ s }}</span></div>{% endfor %}
+    </div>
+    {% endif %}
+    {% if c.gaps %}
+    <div style="font-size:13px;line-height:1.45;margin:4px 0 0;">
+      {% for g in c.gaps %}<div style="color:#cf222e;">✗ <span style="color:#1f2328;">{{ g }}</span></div>{% endfor %}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
+  {% endfor %}
+
+  <p style="font-size:12px;line-height:1.5;color:#6e7781;margin:20px 0 0;border-top:1px solid #d0d7de;padding-top:10px;">
+    Modelo: {{ model }} · Execução: {{ duration }} · Média: {{ avg }} · Chamadas à JSearch: {{ stats.jsearch_requests }}
+  </p>
+</div>
 </body>
 </html>

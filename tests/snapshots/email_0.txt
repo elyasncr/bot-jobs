@@ -1,0 +1,7 @@
+Vagas PJ · 09/11/2026
+42 coletadas · 12 após filtros · 12 avaliadas pelo LLM · 0 enviadas
+
+Nenhuma vaga nova hoje.
+
+--
+Modelo: ollama/qwen3.5:9b · Execução: 1min 35s · Média: 2.8s/vaga · Chamadas à JSearch: 5
