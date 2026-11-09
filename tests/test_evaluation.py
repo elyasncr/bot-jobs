@@ -234,3 +234,15 @@ def test_set_label_keeps_other_entries_and_comments(tmp_path: Path) -> None:
     assert load_labels(path) == {jobs[1].id: 65, "novo": 40}
     text = path.read_text(encoding="utf-8")
     assert f"# {jobs[0].title} · {jobs[0].company}" in text and "sênior demais" in text
+
+
+def test_remove_label_keeps_others(tmp_path: Path) -> None:
+    path = tmp_path / "labels.yaml"
+    jobs = _jobs(2)
+    ensure_label_entries(path, jobs)
+    evaluation.set_label(path, jobs[0].id, jobs[0].title, jobs[0].company, 70)
+    assert evaluation.remove_label(path, jobs[0].id) is True
+    assert load_labels(path) == {}
+    text = path.read_text(encoding="utf-8")
+    assert jobs[0].id not in text and f"# {jobs[1].title} · {jobs[1].company}" in text
+    assert evaluation.remove_label(path, "nao-existe") is False

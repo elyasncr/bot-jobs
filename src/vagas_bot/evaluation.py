@@ -92,6 +92,20 @@ def set_label(path: Path, job_id: str, title: str, company: str, score: int, not
     comments = _label_comments(path)
     entries[job_id] = {"score": score, "note": note}
     comments.setdefault(job_id, _label_comment(title, company))
+    _write_labels(path, entries, comments)
+
+
+def remove_label(path: Path, job_id: str) -> bool:
+    """Drop one job's entry. Returns False when it was not there."""
+    entries = _read_labels_raw(path)
+    if job_id not in entries:
+        return False
+    del entries[job_id]
+    _write_labels(path, entries, _label_comments(path))
+    return True
+
+
+def _write_labels(path: Path, entries: dict[str, Any], comments: dict[str, str]) -> None:
     text = LABELS_HEADER
     for jid, entry in entries.items():
         entry = entry if isinstance(entry, dict) else {}
@@ -129,6 +143,11 @@ def _read_labels_raw(path: Path) -> dict[str, Any]:
         return {}
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return {str(k): v for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def load_label_entries(path: Path) -> dict[str, dict[str, Any]]:
+    """Raw {job_id: {score, note}} (scores may be empty)."""
+    return {jid: e for jid, e in _read_labels_raw(path).items() if isinstance(e, dict)}
 
 
 def load_labels(path: Path) -> dict[str, int]:

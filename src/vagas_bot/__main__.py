@@ -368,5 +368,42 @@ def _embeddings_report(
     console.print(f"[green]Relatório:[/] {out}")
 
 
+# --- dashboard ------------------------------------------------------------------------
+
+
+@app.command()
+def dashboard(
+    config: ConfigOption = Path("config.yaml"),
+    port: Annotated[int, typer.Option(min=0, max=65535, help="Porta local.")] = 8765,
+    no_browser: Annotated[bool, typer.Option("--no-browser", help="Não abre o navegador.")] = False,
+) -> None:
+    """Tela local (vagas capturadas + benchmark) em http://127.0.0.1:<porta>."""
+    from vagas_bot.dashboard.server import find_dist, make_server  # noqa: PLC0415
+
+    settings = _load(config)
+    setup_logging(settings.logs_dir)
+    dist = find_dist(settings.root)
+    if dist is None:
+        console.print("[red]A tela ainda não foi compilada.[/] Rode: cd dashboard && npm ci && npm run build")
+        raise typer.Exit(1)
+    try:
+        httpd = make_server(settings, dist, port=port)
+    except OSError as exc:
+        console.print(f"[red]Não foi possível usar a porta {port}:[/] {exc}. Tente --port 8766.")
+        raise typer.Exit(1) from exc
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    console.print(f"[green]Dashboard em {url}[/] (Ctrl+C para encerrar)")
+    if not no_browser:
+        import webbrowser  # noqa: PLC0415
+
+        webbrowser.open(url)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        console.print("Encerrado.")
+    finally:
+        httpd.server_close()
+
+
 if __name__ == "__main__":
     app()
