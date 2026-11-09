@@ -21,7 +21,7 @@ export function parseScore(text: string): number | null | undefined {
         type="text"
         inputmode="numeric"
         maxlength="3"
-        placeholder="—"
+        placeholder="+ nota"
         aria-label="Minha nota de 0 a 100"
         [value]="draft()"
         (input)="draft.set($any($event.target).value)"
@@ -34,13 +34,21 @@ export function parseScore(text: string): number | null | undefined {
     </span>
   `,
   styles: `
-    .wrap { display: inline-flex; align-items: center; gap: 4px; }
+    .wrap { display: inline-flex; align-items: center; gap: 4px; position: relative; }
     input {
-      width: 3.2em; padding: 3px 4px; text-align: center; font: inherit; font-variant-numeric: tabular-nums;
-      border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
+      width: 3.4em; height: 28px; padding: 0 6px; text-align: center; font: inherit; font-size: 0.88rem; font-weight: 600;
+      font-variant-numeric: tabular-nums; cursor: pointer; transition: width 0.12s, background-color 0.12s, border-color 0.12s;
+      border: 1px solid transparent; border-radius: 999px; background: var(--accent-bg); color: var(--accent);
     }
-    input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-    [data-state='error'] input { border-color: var(--danger); }
+    input:placeholder-shown { width: 5.2em; border: 1px dashed var(--border-strong); background: transparent; }
+    input::placeholder { color: var(--muted); font-weight: 500; opacity: 1; }
+    input:hover { border-color: var(--accent); }
+    input:focus {
+      width: 3.4em; cursor: text; outline: none; border: 1px solid var(--accent); background: var(--surface); color: var(--text);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+    input:focus::placeholder { color: transparent; }
+    [data-state='error'] input { border: 1px solid var(--danger); color: var(--danger); background: var(--danger-bg); }
     .icon { width: 1em; font-size: 0.85em; color: var(--muted); }
     [data-state='saved'] .icon { color: var(--high); }
     [data-state='error'] .icon { color: var(--danger); }

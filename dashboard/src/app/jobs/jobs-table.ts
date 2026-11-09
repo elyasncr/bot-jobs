@@ -1,6 +1,15 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 
-import { CONTRACT_LABELS, JobRow, MODALITY_LABELS, REASON_LABELS, STAGE_LABELS, sourceLabel } from '../core/models';
+import {
+  CONTRACT_LABELS,
+  JobRow,
+  MODALITY_LABELS,
+  REASON_LABELS,
+  STAGE_LABELS,
+  formatDate,
+  shortLocation,
+  sourceLabel,
+} from '../core/models';
 import { LabelInput, SaveState } from '../shared/label-input';
 import { ScoreBadge } from '../shared/score-badge';
 import { SortDir, SortKey } from './job-filters';
@@ -15,52 +24,73 @@ export interface LabelChange {
   imports: [ScoreBadge, LabelInput],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="scroll">
+    <div class="frame">
       <table>
         <thead>
           <tr>
-            <th class="sortable">
-              <button type="button" (click)="toggle('date')">Data {{ arrow('date') }}</button>
-            </th>
             <th>Vaga</th>
-            <th>Local</th>
-            <th>Fonte</th>
-            <th>Contrato</th>
-            <th class="num sortable">
-              <button type="button" (click)="toggle('total')">Nota {{ arrow('total') }}</button>
-            </th>
-            <th class="num sortable">
-              <button type="button" (click)="toggle('cosine')" title="Similaridade CV × vaga (embeddings)">Cos {{ arrow('cosine') }}</button>
-            </th>
-            <th class="num sortable">
-              <button type="button" (click)="toggle('mine')">Minha {{ arrow('mine') }}</button>
-            </th>
             <th>Etapa</th>
+            <th>Contrato</th>
+            <th class="num" [attr.aria-sort]="ariaSort('total')">
+              <button type="button" (click)="toggle('total')">Nota <span class="arrow">{{ arrow('total') }}</span></button>
+            </th>
+            <th class="num" [attr.aria-sort]="ariaSort('cosine')">
+              <button type="button" (click)="toggle('cosine')" title="Similaridade currículo × vaga (embeddings)">
+                Cos <span class="arrow">{{ arrow('cosine') }}</span>
+              </button>
+            </th>
+            <th class="num" [attr.aria-sort]="ariaSort('mine')">
+              <button type="button" (click)="toggle('mine')">Sua nota <span class="arrow">{{ arrow('mine') }}</span></button>
+            </th>
+            <th class="num" [attr.aria-sort]="ariaSort('date')">
+              <button type="button" (click)="toggle('date')">Capturada <span class="arrow">{{ arrow('date') }}</span></button>
+            </th>
           </tr>
         </thead>
         <tbody>
           @for (row of rows(); track row.id) {
             <tr [class.selected]="row.id === selectedId()" (click)="select.emit(row.id)">
-              <td class="date">{{ row.run_date }}</td>
               <td class="job">
                 @if (row.url) {
-                  <a [href]="row.url" target="_blank" rel="noopener" (click)="$event.stopPropagation()">{{ row.title }}</a>
+                  <a class="title" [href]="row.url" target="_blank" rel="noopener" (click)="$event.stopPropagation()">{{ row.title }}</a>
                 } @else {
-                  {{ row.title }}
+                  <span class="title">{{ row.title }}</span>
                 }
-                <span class="company">{{ row.company }}</span>
-                @if (row.low_fidelity) {
-                  <span class="tag" title="Sem descrição: avaliada só pelo título">baixa fidelidade</span>
+                <div class="sub">
+                  <span class="company">{{ row.company }}</span>
+                  @if (location(row); as loc) {
+                    <span class="tag loc" [title]="row.location">{{ loc }}</span>
+                  }
+                  @if (row.modality !== 'unknown') {
+                    <span class="tag">{{ modality[row.modality] }}</span>
+                  }
+                  @if (row.source !== 'history') {
+                    <span class="tag">{{ source(row) }}</span>
+                  }
+                  @if (row.low_fidelity) {
+                    <span class="tag warn" title="Sem descrição: avaliada só pelo título">baixa fidelidade</span>
+                  }
+                </div>
+                <div class="m-meta">
+                  <i class="stage-dot" [attr.data-stage]="row.stage"></i>{{ stage[row.stage] }}
+                  @if (row.pj_status !== 'uncertain') {
+                    · <span class="contract" [attr.data-pj]="row.pj_status">{{ contract[row.pj_status] }}</span>
+                  }
+                  · {{ date(row.run_date) }}
+                  @if (row.embedding_score !== null) {
+                    · cos {{ row.embedding_score.toFixed(2) }}
+                  }
+                </div>
+              </td>
+              <td class="stage-cell">
+                <span class="stage"><i class="stage-dot" [attr.data-stage]="row.stage"></i>{{ stage[row.stage] }}</span>
+                @if (row.filter_reason) {
+                  <span class="reason">{{ reason[row.filter_reason] }}</span>
                 }
               </td>
-              <td class="loc">
-                {{ row.location || '—' }}
-                <span class="muted">{{ modality[row.modality] }}</span>
-              </td>
-              <td class="src muted">{{ source(row) }}</td>
               <td class="contract-cell"><span class="contract" [attr.data-pj]="row.pj_status">{{ contract[row.pj_status] }}</span></td>
               <td class="num total"><app-score-badge [total]="row.total" [estimate]="row.is_estimate" /></td>
-              <td class="num cos muted">{{ row.embedding_score === null ? '—' : row.embedding_score.toFixed(3) }}</td>
+              <td class="num cos">{{ row.embedding_score === null ? '—' : row.embedding_score.toFixed(3) }}</td>
               <td class="num mine">
                 <app-label-input
                   [value]="row.my_score"
@@ -69,16 +99,14 @@ export interface LabelChange {
                   (save)="labelChange.emit({ row, score: $event })"
                 />
               </td>
-              <td class="stage-cell">
-                <span class="stage" [attr.data-stage]="row.stage">{{ stage[row.stage] }}</span>
-                @if (row.filter_reason) {
-                  <span class="muted">· {{ reason[row.filter_reason] }}</span>
-                }
-              </td>
+              <td class="num date">{{ date(row.run_date) }}</td>
             </tr>
           } @empty {
-            <tr>
-              <td colspan="9" class="empty">Nenhuma vaga com esses filtros.</td>
+            <tr class="empty-row">
+              <td colspan="7" class="empty">
+                <strong>Nenhuma vaga com esses filtros.</strong>
+                <span>Tente remover algum filtro ativo.</span>
+              </td>
             </tr>
           }
         </tbody>
@@ -87,60 +115,63 @@ export interface LabelChange {
   `,
   styles: `
     :host { display: block; min-width: 0; }
-    .scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+    .frame { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-weight: 600; white-space: nowrap; }
-    th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th button { all: unset; cursor: pointer; }
+    th {
+      background: var(--surface); text-align: left; white-space: nowrap; padding: 10px 14px;
+      font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint);
+      border-bottom: 1px solid var(--border);
+    }
+    th button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
+    th button:hover { color: var(--text); }
     th button:focus-visible { outline: 2px solid var(--accent); }
-    tbody tr { cursor: pointer; }
+    th[aria-sort='ascending'], th[aria-sort='descending'] { color: var(--accent); }
+    .arrow { display: inline-block; width: 0.8em; }
+    td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr { cursor: pointer; transition: background-color 0.1s; }
     tbody tr:hover { background: var(--hover); }
-    tr.selected { background: var(--selected); }
-    .num { text-align: right; white-space: nowrap; }
-    .date { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .job { min-width: 260px; }
-    .job a { color: var(--text); font-weight: 600; text-decoration: none; }
-    .job a:hover { text-decoration: underline; }
-    .company { display: block; color: var(--muted); }
-    .loc { min-width: 140px; }
-    .loc .muted { display: block; }
-    .muted { color: var(--muted); }
-    .tag { display: inline-block; margin-top: 2px; font-size: 0.75rem; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
-    .contract { white-space: nowrap; }
-    .contract[data-pj='pj'], .contract[data-pj='both'] { color: var(--high); font-weight: 600; }
-    .contract[data-pj='clt'] { color: var(--danger); }
-    .stage { white-space: nowrap; font-weight: 500; }
-    .stage[data-stage='emailed'] { color: var(--high); }
-    .stage[data-stage='filtered'] { color: var(--muted); }
-    .empty { text-align: center; color: var(--muted); padding: 32px; }
+    tbody tr.selected { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent); }
+    .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-    /* Celular: cada vaga vira um cartão; o cabeçalho vira uma barra de ordenação. */
+    .job { min-width: 300px; }
+    .title { color: var(--text); font-weight: 600; text-decoration: none; line-height: 1.35; }
+    a.title:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+    .sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; }
+    .company { color: var(--muted); font-size: 0.85rem; margin-right: 2px; }
+    .loc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+    .m-meta { display: none; }
+
+    .stage { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .reason { display: block; margin: 2px 0 0 15px; font-size: 0.78rem; color: var(--faint); }
+    .cos, .date { color: var(--muted); font-size: 0.85rem; }
+
+    .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+    .empty strong { display: block; color: var(--text); margin-bottom: 2px; }
+    .empty-row { cursor: default; }
+    .empty-row:hover { background: none; }
+
+    /* Celular: cada vaga vira um cartão. */
     @media (max-width: 720px) {
-      .scroll { overflow: visible; border: 0; background: none; }
+      .frame { overflow: visible; border: 0; background: none; box-shadow: none; }
       table, tbody { display: block; }
-      thead { display: block; margin-bottom: 8px; }
-      thead tr { display: flex; flex-wrap: wrap; gap: 6px; }
-      thead th { display: none; position: static; padding: 0; border: 0; background: none; }
-      thead th.sortable { display: block; }
-      thead th.sortable button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
-                                 background: var(--surface); font-size: 0.82rem; font-weight: 500; }
+      thead { display: none; }
       tbody tr {
-        display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px 10px; margin-bottom: 10px; padding: 12px;
-        grid-template-areas: 'job job total' 'loc loc mine' 'contract src stage' 'date date cos';
-        border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'job total' 'job mine';
+        gap: 8px 12px; margin-bottom: 10px; padding: 14px;
+        border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm);
       }
-      tbody td { padding: 0; border: 0; min-width: 0; text-align: left; }
+      tbody tr.selected { box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm); }
+      td { padding: 0; border: 0; }
       .job { grid-area: job; min-width: 0; }
+      .title { pointer-events: none; font-size: 0.95rem; } /* no celular, tocar abre o detalhe (que tem o link) */
+      .loc { max-width: 160px; }
+      .m-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
+      .m-meta .stage-dot { margin-right: 2px; }
       .total { grid-area: total; text-align: right; }
-      .loc { grid-area: loc; min-width: 0; font-size: 0.85rem; }
-      .loc .muted { display: inline; }
-      .mine { grid-area: mine; text-align: right; }
-      .contract-cell { grid-area: contract; font-size: 0.85rem; }
-      .src { grid-area: src; font-size: 0.85rem; }
-      .stage-cell { grid-area: stage; text-align: right; font-size: 0.85rem; }
-      .date { grid-area: date; font-size: 0.8rem; color: var(--muted); }
-      .cos { grid-area: cos; text-align: right; font-size: 0.8rem; }
-      .cos::before { content: 'cos '; }
+      .mine { grid-area: mine; align-self: end; text-align: right; }
+      .stage-cell, .contract-cell, .cos, .date { display: none; }
+      .empty-row { display: block; padding: 0; }
       .empty { display: block; }
     }
   `,
@@ -162,6 +193,11 @@ export class JobsTable {
   protected readonly contract = CONTRACT_LABELS;
   protected readonly modality = MODALITY_LABELS;
   protected readonly source = sourceLabel;
+  protected readonly date = (iso: string) => formatDate(iso);
+
+  protected location(row: JobRow): string | null {
+    return shortLocation(row.location);
+  }
 
   protected toggle(key: SortKey): void {
     const dir: SortDir = this.sortKey() === key && this.sortDir() === 'desc' ? 'asc' : 'desc';
@@ -170,5 +206,9 @@ export class JobsTable {
 
   protected arrow(key: SortKey): string {
     return this.sortKey() !== key ? '' : this.sortDir() === 'desc' ? '↓' : '↑';
+  }
+
+  protected ariaSort(key: SortKey): string | null {
+    return this.sortKey() !== key ? null : this.sortDir() === 'desc' ? 'descending' : 'ascending';
   }
 }

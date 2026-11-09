@@ -116,7 +116,7 @@ export const REASON_LABELS: Record<FilterReason, string> = {
   title: 'Título',
   modality: 'Modalidade',
   clt: 'CLT',
-  limit: '--limit',
+  limit: 'Limite diário',
 };
 
 export const CONTRACT_LABELS: Record<PjStatus, string> = {
@@ -139,3 +139,26 @@ export const MODALITY_LABELS: Record<Modality, string> = {
   onsite: 'Presencial',
   unknown: '—',
 };
+
+
+/** "ollama/qwen3:14b" → "qwen3:14b" (o prefixo se repete em todos os modelos). */
+export function shortModel(model: string): string {
+  return model.replace(/^ollama\//, '');
+}
+
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+/** "2026-11-09" → "9 nov" (com o ano só se não for o ano corrente). */
+export function formatDate(iso: string | null | undefined, today = new Date()): string {
+  if (!iso) return '—';
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d || m > 12) return iso;
+  const text = `${d} ${MONTHS[m - 1]}`;
+  return y === today.getFullYear() ? text : `${text} ${y}`;
+}
+
+/** "Brasília - Plano Piloto, Brasília - DF" → "Brasília - Plano Piloto". */
+export function shortLocation(location: string | null): string | null {
+  if (!location) return null;
+  return location.split(',')[0].trim() || location;
+}
