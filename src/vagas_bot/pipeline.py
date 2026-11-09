@@ -30,6 +30,7 @@ from vagas_bot.scoring.prompts import prefs_from_config
 from vagas_bot.scoring.ranker import RankedJob, rank
 from vagas_bot.sources.base import Source
 from vagas_bot.sources.jsearch import JSearchSource
+from vagas_bot.sources.linkedin_alerts import LinkedInAlertsSource
 from vagas_bot.storage import (
     append_history,
     history_record,
@@ -83,9 +84,15 @@ def validate_env(settings: Settings, opts: RunOptions) -> None:
 
 
 def build_sources(settings: Settings) -> list[Source]:
-    api_key = settings.secrets.rapidapi_key
-    assert api_key is not None  # garantido por validate_env
-    return [JSearchSource(api_key.get_secret_value())]
+    secrets = settings.secrets
+    assert secrets.rapidapi_key is not None  # garantido por validate_env
+    sources: list[Source] = [JSearchSource(secrets.rapidapi_key.get_secret_value())]
+    if settings.config.linkedin_alerts.enabled:
+        assert secrets.gmail_user and secrets.gmail_app_password  # validate_env
+        sources.append(LinkedInAlertsSource(
+            settings.config.linkedin_alerts, secrets.gmail_user, secrets.gmail_app_password.get_secret_value()
+        ))
+    return sources
 
 
 def collect(sources: list[Source], settings: Settings, stats: RunStats) -> list[Job]:
@@ -190,7 +197,7 @@ def report_queries(
     after_dedupe: list[Job], after_filters: list[Job], ranked: list[RankedJob],
 ) -> None:
     for source in sources:
-        if not isinstance(source, JSearchSource):
+        if not isinstance(source, (JSearchSource, LinkedInAlertsSource)):
             continue
         stats = build_query_stats(
             fetched_by_query=source.fetched_by_query,

@@ -23,6 +23,20 @@ class SearchConfig(_Strict):
     include_international_remote: bool = True
 
 
+class LinkedInAlertsConfig(_Strict):
+    """Fonte opcional: emails de alerta de vaga do LinkedIn na caixa do GMAIL_USER (IMAP, só leitura)."""
+
+    enabled: bool = False
+    mailbox: str = "INBOX"
+    senders: list[str] = Field(
+        default_factory=lambda: ["jobalerts-noreply@linkedin.com", "jobs-noreply@linkedin.com"]
+    )
+    since_days: int = Field(default=3, ge=1, le=30)
+    # O email do alerta não diz se a vaga é remota. Se um remetente só manda alertas criados
+    # com o filtro "Remoto" do LinkedIn, liste-o aqui e as vagas dele contam como remotas.
+    assume_remote_senders: list[str] = Field(default_factory=list)
+
+
 class FiltersConfig(_Strict):
     modalities: list[Literal["remote", "hybrid", "onsite"]] = Field(
         default_factory=lambda: ["remote", "hybrid"]
@@ -90,6 +104,7 @@ class StateConfig(_Strict):
 
 class AppConfig(_Strict):
     search: SearchConfig
+    linkedin_alerts: LinkedInAlertsConfig = Field(default_factory=LinkedInAlertsConfig)
     filters: FiltersConfig = Field(default_factory=FiltersConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -196,11 +211,13 @@ def required_env(
     names: list[str] = []
     if collect:
         names.append("RAPIDAPI_KEY")
+    if collect and cfg.linkedin_alerts.enabled:
+        names += ["GMAIL_USER", "GMAIL_APP_PASSWORD"]  # IMAP com a mesma senha de app
     if send_email:
         names += ["GMAIL_USER", "GMAIL_APP_PASSWORD", "EMAIL_TO"]
     if use_llm and cfg.llm.provider == "anthropic":
         names.append("ANTHROPIC_API_KEY")
-    return names
+    return list(dict.fromkeys(names))  # sem repetir (IMAP e envio usam as mesmas)
 
 
 def missing_env(settings: Settings, names: list[str]) -> list[str]:

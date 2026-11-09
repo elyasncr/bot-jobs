@@ -16,6 +16,15 @@ search:
   remote_only: true           # pede só vagas remotas à JSearch (work_from_home=true)
   include_international_remote: true   # vagas contractor remotas fora do BR
 
+linkedin_alerts:               # emails de alerta do LinkedIn na caixa do GMAIL_USER (IMAP, só leitura)
+  enabled: true
+  mailbox: "INBOX"
+  senders: ["jobalerts-noreply@linkedin.com", "jobs-noreply@linkedin.com"]
+  since_days: 3               # cobre o fim de semana na execução de segunda
+  # O email não diz se a vaga é remota (sem isso, só passam vagas com "remoto" no título/local).
+  # Se seus alertas forem criados com o filtro "Remoto" do LinkedIn, liste o remetente aqui:
+  assume_remote_senders: []   # ex.: ["jobalerts-noreply@linkedin.com"]
+
 filters:
   modalities: ["remote"]      # remote | hybrid | onsite (híbrido/presencial só em hybrid_allowed_cities)
   hybrid_allowed_cities: ["Rio de Janeiro"]

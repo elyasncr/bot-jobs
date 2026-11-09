@@ -55,6 +55,15 @@ Atenção: um `uv sync` sem `--extra st` **desinstala** o PyTorch; o `uv run` n�
 - **Regra de troca:** a recomendação só manda trocar se o Spearman gold melhorar pelo menos 0,05 **e** o recall não piorar.
 - **Como usar o fine-tunado:** troque você mesmo no `config.yaml`: `embeddings.provider: sentence-transformers`, `sentence_transformers.model: models/bge-m3-elyas-v1` e `cv_representation: compact`.
 
+## Alertas de vaga do LinkedIn por IMAP (Fase 11)
+
+Com `linkedin_alerts.enabled: true`, cada execução também lê os emails de alerta do LinkedIn (`jobalerts-noreply@` e `jobs-noreply@`) da caixa do `GMAIL_USER`, com a mesma senha de app. A leitura é **só de leitura**: a pasta é aberta em modo somente leitura e os emails não são marcados como lidos.
+
+- **O que é lido:** título, empresa, local e o link `/jobs/view/<id>`, guardado sem os parâmetros de rastreamento. A página da vaga **nunca** é aberta.
+- **Baixa fidelidade:** sem descrição, o LLM avalia só pelo título, e a vaga sai no email com o selo "baixa fidelidade".
+- **Repetidas:** a mesma vaga vinda da JSearch é eliminada pela comparação de título e empresa, ficando a cópia com descrição.
+- **Modalidade:** o email do alerta não diz se a vaga é remota. Com `modalities: ["remote"]`, só passam as vagas com "remoto" no título ou no local. Para aproveitar os alertas, crie-os no LinkedIn com o filtro **Remoto** e liste o remetente em `assume_remote_senders`.
+
 ## Agendamento (dias úteis, 11h)
 
 O script [scripts/run_daily.ps1](scripts/run_daily.ps1) entra na pasta do projeto, inicia o `ollama serve` se o Ollama não responder (espera até 30 s), roda o bot e grava tudo em `logs/YYYY-MM-DD.log`. Uma trava em `data/.last_run` impede duas execuções bem-sucedidas no mesmo dia.
@@ -86,3 +95,5 @@ A tarefa é criada com a opção **"Executar a tarefa assim que possível após 
 - [x] Fase 7 — Agendamento local (dias úteis, 11h)
 - [x] Fase 8 — Comparação de modelos (`eval-models`)
 - [x] Fase 9 — Embeddings com sentence-transformers + fine-tuning (`label`, `finetune-embeddings`, `eval-embeddings`)
+- [ ] Fase 10 — Provider Anthropic (não será usado)
+- [x] Fase 11 — Alertas do LinkedIn por IMAP
