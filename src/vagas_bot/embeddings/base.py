@@ -41,8 +41,7 @@ def get_embedder(settings: Settings) -> Embedder:
             timeout_s=settings.config.llm.ollama.request_timeout_s,
         )
     if cfg.provider == "sentence-transformers":
-        raise ConfigError(
-            "Provider de embeddings 'sentence-transformers' ainda não implementado (Fase 9). "
-            "Use embeddings.provider: ollama."
-        )
+        from vagas_bot.embeddings.st import STEmbedder  # noqa: PLC0415 — não importa torch aqui
+
+        return STEmbedder(cfg.sentence_transformers, root=settings.root)
     raise ConfigError(f"Provider de embeddings desconhecido: {cfg.provider}")

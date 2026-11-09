@@ -223,3 +223,14 @@ def test_vram_delta() -> None:
     assert evaluation._vram_delta(1.9, 11.4) == 9.5
     assert evaluation._vram_delta(None, 11.4) is None
     assert evaluation._vram_delta(5.0, 4.0) is None
+
+
+def test_set_label_keeps_other_entries_and_comments(tmp_path: Path) -> None:
+    path = tmp_path / "labels.yaml"
+    jobs = _jobs(2)
+    ensure_label_entries(path, jobs)
+    evaluation.set_label(path, jobs[1].id, jobs[1].title, jobs[1].company, 65, note="stack ok, sênior demais")
+    evaluation.set_label(path, "novo", "ML Eng", "ACME", 40)
+    assert load_labels(path) == {jobs[1].id: 65, "novo": 40}
+    text = path.read_text(encoding="utf-8")
+    assert f"# {jobs[0].title} · {jobs[0].company}" in text and "sênior demais" in text

@@ -81,10 +81,47 @@ def ensure_label_entries(path: Path, jobs: list[Job]) -> int:
     if text and not text.endswith("\n"):
         text += "\n"
     for job in missing:
-        comment = f"{job.title} · {job.company}".replace("\n", " ")[:100]
-        text += f"\n{json.dumps(job.id)}:  # {comment}\n  score:\n  note: \"\"\n"
+        text += _label_block(job.id, _label_comment(job.title, job.company), None, "")
     path.write_text(text, encoding="utf-8")
     return len(missing)
+
+
+def set_label(path: Path, job_id: str, title: str, company: str, score: int, note: str = "") -> None:
+    """Set one job's score (adds the entry if missing). Rewrites the file in the standard format."""
+    entries = _read_labels_raw(path)
+    comments = _label_comments(path)
+    entries[job_id] = {"score": score, "note": note}
+    comments.setdefault(job_id, _label_comment(title, company))
+    text = LABELS_HEADER
+    for jid, entry in entries.items():
+        entry = entry if isinstance(entry, dict) else {}
+        text += _label_block(jid, comments.get(jid, ""), entry.get("score"), str(entry.get("note") or ""))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _label_comment(title: str, company: str) -> str:
+    return f"{title} · {company}".replace("\n", " ")[:100]
+
+
+def _label_block(job_id: str, comment: str, score: int | None, note: str) -> str:
+    shown = "" if score is None else f" {score}"
+    return f"\n{json.dumps(job_id)}:  # {comment}\n  score:{shown}\n  note: {json.dumps(note, ensure_ascii=False)}\n"
+
+
+def _label_comments(path: Path) -> dict[str, str]:
+    """The '# title · company' comment of each entry (yaml.safe_load drops comments)."""
+    comments: dict[str, str] = {}
+    if not path.is_file():
+        return comments
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith('"') and ":  # " in line:
+            key, _, comment = line.partition(":  # ")
+            try:
+                comments[json.loads(key)] = comment
+            except json.JSONDecodeError:
+                continue
+    return comments
 
 
 def _read_labels_raw(path: Path) -> dict[str, Any]:

@@ -113,14 +113,16 @@ def log_ranked(ranked: list[RankedJob]) -> None:
         )
 
 
-def embedding_stage(jobs: list[Job], embedder: Embedder, cv_md: str) -> list[Job]:
+def embedding_stage(
+    jobs: list[Job], embedder: Embedder, cv_md: str, representation: str = "blocks_mean"
+) -> list[Job]:
     """Whole embedding stage before the LLM; always frees VRAM at the end."""
     if not jobs:
         return jobs
     embedder.healthcheck()
     t0 = time.perf_counter()
     try:
-        ranked = prerank(jobs, embedder, cv_md)
+        ranked = prerank(jobs, embedder, cv_md, representation)
     finally:
         embedder.release()
     log.info("Embeddings (%s): %d vagas em %.1fs.", embedder.name, len(ranked), time.perf_counter() - t0)
@@ -238,7 +240,7 @@ def run_pipeline(
     after_filters = jobs
 
     embedder = embedder or get_embedder(settings)
-    jobs = embedded = embedding_stage(jobs, embedder, cv_md)
+    jobs = embedded = embedding_stage(jobs, embedder, cv_md, cfg.embeddings.cv_representation)
     if opts.no_llm:
         log.info("--no-llm: ranking só pela estimativa dos embeddings.")
     else:

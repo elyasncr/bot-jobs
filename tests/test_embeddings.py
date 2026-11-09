@@ -12,7 +12,8 @@ from vagas_bot.config import ConfigError, load_settings
 from vagas_bot.embeddings import ollama as ollama_embed
 from vagas_bot.embeddings.base import EmbedderUnavailable, get_embedder, l2_normalize
 from vagas_bot.embeddings.ollama import OllamaEmbedder
-from vagas_bot.scoring.prerank import cv_blocks, cv_vector, job_to_text, prerank
+from vagas_bot.embeddings.st import STEmbedder, resolve_model_path
+from vagas_bot.scoring.prerank import cv_blocks, cv_to_text_compact, cv_vector, job_to_text, prerank
 
 REAL_CV = Path(__file__).resolve().parent.parent / "data" / "cv.md"
 CV = """# Fulano
@@ -46,20 +47,72 @@ def test_factory_picks_ollama(project_dir: Path) -> None:
     assert embedder.host == "http://localhost:11434"
 
 
-def test_factory_st_not_available_yet(project_dir: Path) -> None:
+def test_factory_picks_st_and_resolves_local_model(project_dir: Path) -> None:
     settings = load_settings(project_dir / "config.yaml")
     settings.config.embeddings.provider = "sentence-transformers"
-    with pytest.raises(ConfigError, match="Fase 9"):
+    embedder = get_embedder(settings)
+    assert isinstance(embedder, STEmbedder)
+    assert embedder.name == "st/BAAI/bge-m3" and embedder.model_path == "BAAI/bge-m3"  # nome do HF
+
+    (project_dir / "models" / "meu-modelo").mkdir(parents=True)
+    assert resolve_model_path("models/meu-modelo", project_dir) == str(project_dir / "models" / "meu-modelo")
+
+
+def test_factory_unknown_provider(project_dir: Path) -> None:
+    settings = load_settings(project_dir / "config.yaml")
+    object.__setattr__(settings.config.embeddings, "provider", "outro")
+    with pytest.raises(ConfigError, match="desconhecido"):
         get_embedder(settings)
 
 
 def test_st_and_torch_not_imported_by_default() -> None:
+    """Building the st embedder must not import torch: only healthcheck/encode do."""
     code = (
         "import sys, vagas_bot.pipeline, vagas_bot.embeddings.base, vagas_bot.scoring.prerank;"
+        "from vagas_bot.embeddings.st import STEmbedder;"
+        "from vagas_bot.config import SentenceTransformersConfig;"
+        "from pathlib import Path; STEmbedder(SentenceTransformersConfig(), Path('.'));"
         "print('torch' in sys.modules, 'sentence_transformers' in sys.modules)"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "False False"
+
+
+class _FakeSTModel:
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def encode(self, texts: list[str], **kwargs: Any) -> np.ndarray:
+        self.calls.append(texts)
+        assert kwargs["normalize_embeddings"] is True
+        return np.array([[float(len(t)), 1.0] for t in texts])
+
+
+def test_st_embedder_applies_prefixes_and_releases() -> None:
+    from vagas_bot.config import SentenceTransformersConfig
+
+    embedder = STEmbedder(SentenceTransformersConfig(query_prefix="query: ", passage_prefix="passage: "), Path("."))
+    fake = _FakeSTModel()
+    embedder._model = fake
+    vectors = embedder.embed_queries(["vaga"])
+    embedder.embed_passages(["cv"])
+    assert fake.calls == [["query: vaga"], ["passage: cv"]]
+    assert np.allclose(np.linalg.norm(vectors, axis=1), 1.0)
+    embedder.release()
+    assert embedder._model is None
+
+
+def test_cv_compact_has_head_and_roles() -> None:
+    text = cv_to_text_compact(CV)
+    assert "Cargo-alvo" in text and "Engenheiro de IA" in text and "LLM, RAG" in text
+    assert "Cargos:\nEmpresa X" in text
+    assert "RAG em produção" not in text and "MBA" not in text  # sem bullets de experiência e sem formação
+
+
+def test_cv_vector_compact_is_single_normalized_embedding() -> None:
+    embedder = FakeEmbedder()
+    vec = cv_vector(embedder, CV, "compact")
+    assert vec.shape == (4,) and np.isclose(np.linalg.norm(vec), 1.0)
 
 
 # --- CV / job text --------------------------------------------------------------------

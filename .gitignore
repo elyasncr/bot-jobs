@@ -7,6 +7,7 @@ data/.last_run
 data/jobs.jsonl
 data/eval/
 eval_report.md
+finetune_report.md
 models/
 logs/
 preview.html

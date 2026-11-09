@@ -1,9 +1,10 @@
 """CLI entry point: uv run python -m vagas_bot <command>."""
 
+import importlib.util
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from pydantic import ValidationError
@@ -21,9 +22,11 @@ from vagas_bot.filters import apply_filters, dedupe
 from vagas_bot.log import get_logger, setup_logging
 from vagas_bot.notify.sample import sample_ranked
 from vagas_bot.pipeline import RunOptions, RunStats, run_pipeline, send_notification
+from vagas_bot.scoring.prerank import cv_to_text_compact, job_to_text
 from vagas_bot.scoring.prompts import prefs_from_config
 from vagas_bot.sources.jsearch import JSearchSource
 from vagas_bot.storage import StorageError
+from vagas_bot.training import dataset, labeling
 
 
 def _force_utf8_stdio() -> None:
@@ -222,6 +225,146 @@ def _write_report(settings: Settings, results_path: Path, out: Path) -> None:
     meta = meta | {"results_file": results_path.relative_to(settings.root).as_posix()
                    if results_path.is_relative_to(settings.root) else str(results_path)}
     out.write_text(render_report(runs, summaries, metas, labels, meta), encoding="utf-8")
+    console.print(f"[green]Relatório:[/] {out}")
+
+
+# --- Fase 9: embeddings (sentence-transformers + fine-tuning) -------------------------
+
+
+def _training_split(settings: Settings, seed: int = 42, gold_weight: int = 3) -> dataset.DatasetSplit:
+    history = dataset.load_history(settings.history_path)
+    labels = evaluation.load_labels(settings.eval_dir / "labels.yaml")
+    eval_jobs = evaluation.load_eval_jobs(settings.eval_dir / "jobs")
+    return dataset.split_pairs(
+        dataset.silver_pairs(history), dataset.gold_pairs(labels, eval_jobs, history), seed, gold_weight
+    )
+
+
+def _load_cv_or_exit(settings: Settings) -> str:
+    try:
+        return load_cv(settings.cv_path)
+    except CVError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
+
+
+@app.command()
+def label(
+    config: ConfigOption = Path("config.yaml"),
+    n: Annotated[int, typer.Option("--n", min=1, help="Máximo de vagas nesta sessão.")] = 10,
+    seed: Annotated[int, typer.Option(help="Semente do sorteio.")] = 42,
+) -> None:
+    """Mostra vagas do histórico e pede sua nota (0-100) → data/eval/labels.yaml (gold)."""
+    settings = _load(config)
+    labels_path = settings.eval_dir / "labels.yaml"
+    labeled = evaluation.load_labels(labels_path)
+    history = dataset.load_history(settings.history_path)
+    archive = {j.id: j for j in archived_jobs(load_archive(settings.jobs_archive_path))}
+    candidates = labeling.pick_candidates(history, set(labeled), n, seed)
+    if not candidates:
+        console.print("Nenhuma vaga do histórico sem nota. Rode o bot por mais alguns dias.")
+        return
+    console.print(f"{len(candidates)} vagas (prioridade: nota do LLM entre 40 e 75). Enter pula, q encerra.")
+    saved = 0
+    for index, record in enumerate(candidates, start=1):
+        job = archive.get(record["id"]) or labeling.job_from_history(record)
+        console.rule(f"{index}/{len(candidates)}")
+        console.print(labeling.describe(record, job), markup=False, highlight=False)
+        answer = typer.prompt("Sua nota (0-100)", default="", show_default=False).strip().lower()
+        if answer == "q":
+            break
+        if not answer:
+            continue
+        if not answer.isdigit() or not 0 <= int(answer) <= 100:
+            console.print("[yellow]Nota inválida, vaga pulada.[/]")
+            continue
+        note = typer.prompt("Comentário (opcional)", default="", show_default=False).strip()
+        evaluation.save_eval_jobs([job], settings.eval_dir / "jobs")
+        evaluation.set_label(labels_path, job.id, job.title, job.company, int(answer), note)
+        saved += 1
+    total = len(evaluation.load_labels(labels_path))
+    console.print(f"[green]{saved} notas salvas[/] ({total} no total em data/eval/labels.yaml).")
+
+
+@app.command("finetune-embeddings")
+def finetune_embeddings(
+    config: ConfigOption = Path("config.yaml"),
+    base: Annotated[str, typer.Option(help="Modelo base (Hugging Face ou pasta local).")] = "BAAI/bge-m3",
+    out: Annotated[Path, typer.Option(help="Pasta do modelo treinado.")] = Path("models/bge-m3-elyas-v1"),
+    epochs: Annotated[int, typer.Option(min=1)] = 2,
+    lr: Annotated[float, typer.Option(help="Learning rate.")] = 2e-5,
+    batch_size: Annotated[int, typer.Option(min=1)] = 8,
+    max_seq_length: Annotated[int, typer.Option(min=64)] = 512,
+    gold_weight: Annotated[int, typer.Option(min=1, help="Cópias de cada par gold no treino.")] = 3,
+    gradient_checkpointing: Annotated[bool, typer.Option(help="Economiza VRAM (mais lento).")] = False,
+    seed: Annotated[int, typer.Option()] = 42,
+    force: Annotated[bool, typer.Option("--force", help="Treina mesmo abaixo do mínimo de dados.")] = False,
+    report: Annotated[Path, typer.Option(help="Relatório base × fine-tunado.")] = Path("finetune_report.md"),
+) -> None:
+    """Fine-tuning do embedding com history.jsonl (silver) + labels.yaml (gold)."""
+    settings = _load(config)
+    setup_logging(settings.logs_dir)
+    cv_md = _load_cv_or_exit(settings)
+    split = _training_split(settings, seed, gold_weight)
+    try:
+        warnings = dataset.check_minimums(split, force)
+    except dataset.InsufficientData as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
+    for warning in warnings:
+        console.print(f"[yellow]Aviso (--force):[/] {warning}")
+    if importlib.util.find_spec("sentence_transformers") is None:
+        console.print("[red]Extra 'st' não instalado.[/] Rode: uv sync --extra st")
+        raise typer.Exit(1)
+    from vagas_bot.training.finetune import FinetuneParams, finetune  # noqa: PLC0415
+
+    params = FinetuneParams(
+        base=base, epochs=epochs, learning_rate=lr, batch_size=batch_size, max_seq_length=max_seq_length,
+        gradient_checkpointing=gradient_checkpointing, gold_weight=gold_weight, seed=seed,
+    )
+    out_dir = _resolve(settings, out)
+    meta = finetune(params, split, cv_to_text_compact(cv_md), out_dir, warnings)
+    rel = out_dir.relative_to(settings.root).as_posix() if out_dir.is_relative_to(settings.root) else str(out_dir)
+    _embeddings_report(settings, cv_md, split, [f"st/{base}", f"st/{rel}"], _resolve(settings, report), meta)
+
+
+@app.command("eval-embeddings")
+def eval_embeddings(
+    specs: Annotated[list[str], typer.Argument(help="ex.: ollama/bge-m3 st/BAAI/bge-m3 st/models/bge-m3-elyas-v1")],
+    config: ConfigOption = Path("config.yaml"),
+    top_n: Annotated[int | None, typer.Option(help="Padrão: embeddings.top_n do config.")] = None,
+    out: Annotated[Path, typer.Option(help="Relatório markdown.")] = Path("finetune_report.md"),
+) -> None:
+    """Compara embedders nos mesmos dados de validação e gera finetune_report.md."""
+    settings = _load(config)
+    setup_logging(settings.logs_dir)
+    cv_md = _load_cv_or_exit(settings)
+    _embeddings_report(settings, cv_md, _training_split(settings), specs, _resolve(settings, out), None, top_n)
+
+
+def _embeddings_report(
+    settings: Settings,
+    cv_md: str,
+    split: dataset.DatasetSplit,
+    specs: list[str],
+    out: Path,
+    training_meta: dict[str, Any] | None,
+    top_n: int | None = None,
+) -> None:
+    from vagas_bot.training import eval_embeddings as ee  # noqa: PLC0415
+
+    k = top_n or settings.config.embeddings.top_n
+    eval_texts = [job_to_text(j) for j in evaluation.load_eval_jobs(settings.eval_dir / "jobs")]
+    results = []
+    for raw in specs:
+        try:
+            spec = ee.resolve_spec(raw, settings)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/]")
+            raise typer.Exit(2) from exc
+        results.append(ee.evaluate_embedder(ee.build_embedder(raw, settings), spec, cv_md, split, eval_texts, k))
+    ee.add_agreement(results)
+    out.write_text(ee.render_report(results, split, k, len(eval_texts), training_meta), encoding="utf-8")
     console.print(f"[green]Relatório:[/] {out}")
 
 

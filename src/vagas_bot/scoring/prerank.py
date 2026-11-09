@@ -57,17 +57,37 @@ def cv_blocks(cv_md: str) -> list[str]:
     return [joined for parts in blocks if (joined := "\n\n".join(parts).strip())]
 
 
-def cv_vector(embedder: Embedder, cv_md: str) -> np.ndarray:
-    """Normalized mean of the block embeddings (cv_representation = blocks_mean)."""
+def cv_to_text_compact(cv_md: str) -> str:
+    """Header + summary + skills + job titles (the '### ' lines of the experience sections).
+
+    The CV format used in fine-tuning (Phase 9); fine-tuned models must use it at inference.
+    """
+    sections = _split_sections(cv_md)
+    head = [f"{t}\n{b}".strip() for t, b in sections if _block_index(t) == 0]
+    roles = [
+        line[4:].strip()
+        for t, b in sections
+        if _block_index(t) == 1
+        for line in b.splitlines()
+        if line.startswith("### ")
+    ]
+    parts = head + (["Cargos:\n" + "\n".join(roles)] if roles else [])
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+def cv_vector(embedder: Embedder, cv_md: str, representation: str = "blocks_mean") -> np.ndarray:
+    """blocks_mean: normalized mean of the 3 block embeddings; compact: one embedding."""
+    if representation == "compact":
+        return l2_normalize(embedder.embed_passages([cv_to_text_compact(cv_md)])[0])
     vectors = embedder.embed_passages(cv_blocks(cv_md))
     return l2_normalize(vectors.mean(axis=0))
 
 
-def prerank(jobs: list[Job], embedder: Embedder, cv_md: str) -> list[Job]:
+def prerank(jobs: list[Job], embedder: Embedder, cv_md: str, representation: str = "blocks_mean") -> list[Job]:
     """Return all jobs with embedding_score set, sorted by it (desc)."""
     if not jobs:
         return []
-    cv = cv_vector(embedder, cv_md)
+    cv = cv_vector(embedder, cv_md, representation)
     job_vectors = embedder.embed_queries([job_to_text(j) for j in jobs])
     scores = job_vectors @ cv
     scored = [j.model_copy(update={"embedding_score": float(s)}) for j, s in zip(jobs, scores, strict=True)]

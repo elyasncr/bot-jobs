@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic"]
-st = ["sentence-transformers", "torch", "datasets", "scipy"]
+st = ["sentence-transformers[train]>=6.2", "torch>=2.15", "datasets>=3.0", "scipy>=1.14"]  # [train] traz o accelerate exigido pelo Trainer
 
 [dependency-groups]
 dev = [
@@ -40,3 +40,12 @@ markers = [
 
 [tool.uv.build-backend]
 module-name = "vagas_bot"
+
+# PyTorch com CUDA 13.2 (RTX 5070 Ti / Blackwell exige CUDA 12.8+). Só para o extra "st".
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu132", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
