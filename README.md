@@ -80,6 +80,7 @@ uv run python -m vagas_bot dashboard                # abre http://127.0.0.1:8765
   1. Rode uma vez, como administrador, `powershell -ExecutionPolicy Bypass -File scripts\allow_dashboard_lan.ps1`. Ele marca a rede como Privada e libera a porta 8765 só para a rede local.
   2. Depois, rode `uv run python -m vagas_bot dashboard --lan`. O terminal mostra um link `http://<ip-do-pc>:8765/?t=<código>`: abra-o uma vez no celular, que fica autorizado por 1 ano (cookie). Outros aparelhos da rede sem o código recebem "acesso restrito". O código fica em `data/.dashboard_token`; apague o arquivo para gerar outro.
   3. No celular, a tela de Vagas vira uma lista de cartões, e cada filtro abre como uma folha na parte de baixo da tela.
+  4. Para o dashboard subir sozinho quando você entra no Windows (sem janela, sem administrador): `powershell -ExecutionPolicy Bypass -File scripts\install_dashboard_task.ps1`. A saída vai para `logs\dashboard.log`. Comandos: `Start-ScheduledTask` / `Stop-ScheduledTask` / `Unregister-ScheduledTask -TaskName vagas-pj-bot-dashboard -Confirm:$false`.
 - **Desenvolvimento:** `uv run python -m vagas_bot dashboard --no-browser` em um terminal e `cd dashboard; npm start` em outro.
 
 ## Agendamento (dias úteis, 11h)
