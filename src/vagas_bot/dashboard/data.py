@@ -231,12 +231,14 @@ def save_label(settings: Settings, job_id: str, body: Any) -> dict[str, Any]:
     """PUT /api/labels/{id}: {"score": 0-100 | null, "note": "..."}."""
     if not isinstance(body, dict) or "score" not in body:
         raise DashboardError(400, 'Corpo inválido: envie {"score": 0-100 ou null, "note": "..."}')
-    score, note = body["score"], body.get("note") or ""
+    score, note = body["score"], body.get("note")
     if score is not None and (isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100):
         raise DashboardError(400, "A nota deve ser um inteiro de 0 a 100 (ou null para apagar).")
-    if not isinstance(note, str):
+    if note is not None and not isinstance(note, str):
         raise DashboardError(400, "O comentário deve ser texto.")
     labels_path = settings.eval_dir / "labels.yaml"
+    if note is None:  # sem "note" no corpo: mantém o comentário que já existe
+        note = str(evaluation.load_label_entries(labels_path).get(job_id, {}).get("note") or "")
     if score is None:
         evaluation.remove_label(labels_path, job_id)
         return {"id": job_id, "my_score": None, "my_note": ""}

@@ -64,6 +64,20 @@ Com `linkedin_alerts.enabled: true`, cada execução também lê os emails de al
 - **Repetidas:** a mesma vaga vinda da JSearch é eliminada pela comparação de título e empresa, ficando a cópia com descrição.
 - **Modalidade:** o email do alerta não diz se a vaga é remota. Com `modalities: ["remote"]`, só passam as vagas com "remoto" no título ou no local. Para aproveitar os alertas, crie-os no LinkedIn com o filtro **Remoto** e liste o remetente em `assume_remote_senders`.
 
+## Dashboard
+
+Uma tela local para navegar por todas as vagas capturadas (inclusive as filtradas, com o motivo), analisar o benchmark dos modelos e dar as suas notas. Requer Node 20 ou mais novo.
+
+```powershell
+cd dashboard; npm ci; npm run build; cd ..          # 1ª vez (e depois de atualizar a tela)
+uv run python -m vagas_bot dashboard                # abre http://127.0.0.1:8765 (Ctrl+C encerra)
+```
+
+- **Vagas:** contadores, filtros guardados na URL (dá para salvar o link), tabela ordenável e um painel com a descrição, as notas parciais do LLM, os pontos fortes e as lacunas. A sua nota (0–100) e o comentário gravam em `data/eval/labels.yaml`.
+- **Benchmark:** a mesma tabela do `eval_report.md`, com o melhor valor destacado, um gráfico de notas por vaga e por modelo, e as notas lado a lado. Ao salvar uma nota sua, o Spearman é recalculado.
+- **Privacidade:** o servidor só aceita conexões da sua máquina (127.0.0.1) e usa só a biblioteca padrão do Python.
+- **Desenvolvimento:** `uv run python -m vagas_bot dashboard --no-browser` em um terminal e `cd dashboard; npm start` em outro.
+
 ## Agendamento (dias úteis, 11h)
 
 O script [scripts/run_daily.ps1](scripts/run_daily.ps1) entra na pasta do projeto, inicia o `ollama serve` se o Ollama não responder (espera até 30 s), roda o bot e grava tudo em `logs/YYYY-MM-DD.log`. Uma trava em `data/.last_run` impede duas execuções bem-sucedidas no mesmo dia.

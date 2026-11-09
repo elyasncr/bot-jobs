@@ -252,3 +252,11 @@ def test_cli_dashboard_without_build(project_dir: Path) -> None:
     result = CliRunner().invoke(app, ["dashboard", "--no-browser", "--config", str(project_dir / "config.yaml")])
     assert result.exit_code == 1
     assert "npm ci && npm run build" in result.output
+
+
+def test_save_label_without_note_keeps_existing_note(settings: Settings) -> None:
+    job = make_job(title="AI A")
+    _archive(settings, date(2026, 11, 9), [job], [job], set())
+    data.save_label(settings, job.id, {"score": 60, "note": "stack boa"})
+    assert data.save_label(settings, job.id, {"score": 75})["my_note"] == "stack boa"
+    assert evaluation.load_label_entries(settings.eval_dir / "labels.yaml")[job.id]["note"] == "stack boa"
