@@ -95,3 +95,26 @@ def make_job(**overrides: Any) -> Job:
         "posted_at": None,
     }
     return Job.model_validate(base | overrides)
+
+
+class ScriptedScorer:
+    """Returns technical=<value> from a per-call script; None in the script = invalid JSON."""
+
+    def __init__(self, name: str, script: list[int | None], down: bool = False) -> None:
+        self.name = name
+        self.script = list(script)
+        self.down = down
+        self.calls = 0
+        self.invalid_attempts = 0
+
+    def healthcheck(self) -> None:
+        if self.down:
+            raise LLMUnavailable("Modelo x não encontrado. Rode: ollama pull x")
+
+    def score(self, job: Job, cv_md: str, prefs: Prefs) -> LLMScoreOutput:
+        self.calls += 2 if not self.script or self.script[0] is None else 1
+        value = self.script.pop(0) if self.script else 50
+        if value is None:
+            self.invalid_attempts += 2
+            raise LLMInvalidOutput("JSON inválido após 2 tentativas")
+        return llm_output(technical=value, seniority=value, domain=value, modality_contract=value, language=value)

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from helpers import llm_output, make_job
+from helpers import ScriptedScorer, llm_output, make_job
 from typer.testing import CliRunner
 
 from vagas_bot import evaluation
@@ -25,35 +25,11 @@ from vagas_bot.evaluation import (
     spearman,
     summarize,
 )
-from vagas_bot.models import Job, LLMScoreOutput, PJStatus, Prefs
-from vagas_bot.scoring.llm_base import LLMInvalidOutput, LLMUnavailable
+from vagas_bot.models import Job, PJStatus, Prefs
 from vagas_bot.scoring.ranker import weighted_total
 
 PREFS = Prefs(modalities=["remote"], hybrid_allowed_cities=[])
 runner = CliRunner()
-
-
-class ScriptedScorer:
-    """Returns technical=<value> from a per-call script; None in the script = invalid JSON."""
-
-    def __init__(self, name: str, script: list[int | None], down: bool = False) -> None:
-        self.name = name
-        self.script = list(script)
-        self.down = down
-        self.calls = 0
-        self.invalid_attempts = 0
-
-    def healthcheck(self) -> None:
-        if self.down:
-            raise LLMUnavailable("Modelo x não encontrado. Rode: ollama pull x")
-
-    def score(self, job: Job, cv_md: str, prefs: Prefs) -> LLMScoreOutput:
-        self.calls += 2 if not self.script or self.script[0] is None else 1
-        value = self.script.pop(0) if self.script else 50
-        if value is None:
-            self.invalid_attempts += 2
-            raise LLMInvalidOutput("JSON inválido após 2 tentativas")
-        return llm_output(technical=value, seniority=value, domain=value, modality_contract=value, language=value)
 
 
 def _jobs(n: int) -> list[Job]:
@@ -127,6 +103,28 @@ def test_evaluate_model_unavailable() -> None:
     run = evaluate_model(ScriptedScorer("fake/x", [], down=True), _jobs(2), "cv", PREFS, runs=2)
     assert not run.available and "ollama pull" in (run.error or "")
     assert run.trials == []
+
+
+def test_evaluate_model_reports_progress() -> None:
+    seen: list[tuple[int, int]] = []
+    evaluate_model(ScriptedScorer("fake/a", [50] * 5), _jobs(2), "cv", PREFS, runs=2,
+                   on_progress=lambda done, total: seen.append((done, total)))
+    assert seen == [(1, 4), (2, 4), (3, 4), (4, 4)]
+
+
+def test_run_models_reports_progress_per_model(project_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = load_settings(project_dir / "config.yaml")
+    monkeypatch.setattr(evaluation, "gpu_memory_used_gb", lambda: None)
+    monkeypatch.setattr(evaluation, "loaded_vram_gb", lambda host, model: None)
+    monkeypatch.setattr(evaluation, "unload_model", lambda host, model: None)
+    seen: list[tuple[str, int, int]] = []
+    evaluation.run_models(
+        settings, ["a:1b", "b:1b"], _jobs(1), "cv", PREFS, runs=1,
+        make_scorer=lambda s, m: ScriptedScorer(f"ollama/{m}", [50, 50], down=m == "b:1b"),
+        on_progress=lambda model, done, total: seen.append((model, done, total)),
+    )
+    # a:1b: 1 tentativa + o fechamento do modelo; b:1b indisponível conta como concluído
+    assert seen == [("a:1b", 1, 1), ("a:1b", 1, 1), ("b:1b", 1, 1)]
 
 
 def test_summarize_metrics() -> None:

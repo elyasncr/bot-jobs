@@ -228,7 +228,8 @@ class ModelRun:
 
 
 def evaluate_model(
-    scorer: LLMScorer, jobs: list[Job], cv_md: str, prefs: Prefs, runs: int, warmup: bool = True
+    scorer: LLMScorer, jobs: list[Job], cv_md: str, prefs: Prefs, runs: int, warmup: bool = True,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> ModelRun:
     """Score every job `runs` times (whole pass per run, so runs don't sit back to back)."""
     result = ModelRun(model=scorer.name)
@@ -255,6 +256,8 @@ def evaluate_model(
             shown = f"{trial.total:3d}%" if trial.total is not None else "erro"
             log.info("  %s [%d/%d] rodada %d: %s em %.1fs · %s",
                      scorer.name, done, total_calls, run, shown, trial.latency_s, job.title)
+            if on_progress:
+                on_progress(done, total_calls)
             if trial.error and trial.error.startswith("indisponível"):
                 result.available = False
                 result.error = trial.error
@@ -297,17 +300,26 @@ def run_models(
     runs: int,
     warmup: bool = True,
     make_scorer: Callable[[Settings, str], LLMScorer] = ollama_scorer_for,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> list[ModelRun]:
-    """One model at a time; each is unloaded at the end so the next gets the whole GPU."""
+    """One model at a time; each is unloaded at the end so the next gets the whole GPU.
+
+    on_progress(model, done, total) after each attempt, plus once with done=total when the model ends
+    (also when it is unavailable), so a progress bar never gets stuck.
+    """
     results = []
+    total = runs * len(jobs)
     for model in models:
         log.info("Avaliando %s: %d vagas × %d rodadas.", model, len(jobs), runs)
         scorer = make_scorer(settings, model)
         baseline = gpu_memory_used_gb()
-        run = evaluate_model(scorer, jobs, cv_md, prefs, runs, warmup)
+        step = (lambda done, tot, m=model: on_progress(m, done, tot)) if on_progress else None
+        run = evaluate_model(scorer, jobs, cv_md, prefs, runs, warmup, on_progress=step)
         if run.available or run.trials:
             run.vram_gb = _vram_delta(baseline, gpu_memory_used_gb()) or loaded_vram_gb(settings.ollama_host, model)
             unload_model(settings.ollama_host, model)
+        if on_progress:
+            on_progress(model, total, total)
         results.append(run)
     return results
 
