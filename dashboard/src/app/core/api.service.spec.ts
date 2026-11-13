@@ -83,4 +83,12 @@ describe('ApiService', () => {
     http.expectOne('/api/benchmark/models').flush({ error: 'Ollama indisponível' }, { status: 503, statusText: 'Unavailable' });
     expect(api.lastError()).toBeNull();
   });
+
+  it('falha ao consultar o status volta para quem chamou, sem o aviso global', () => {
+    let error: Error | undefined;
+    api.benchmarkStatus().subscribe({ error: (e: Error) => (error = e) });
+    http.expectOne('/api/benchmark/status').flush({ error: 'falhou' }, { status: 500, statusText: 'Server Error' });
+    expect(error?.message).toBe('falhou');
+    expect(api.lastError()).toBeNull();
+  });
 });

@@ -312,9 +312,12 @@ export class BenchmarkPage {
 
   /** Rodada nova terminou: recarrega a lista e mostra o resultado novo. */
   protected onBenchmarkFinished(file: string): void {
-    this.api.benchmarkRuns().subscribe((runs) => {
-      this.runs.set(runs);
-      if (runs.length) this.selectRun(runs.some((r) => r.file === file) ? file : runs[0].file);
+    this.api.benchmarkRuns().subscribe({
+      next: (runs) => {
+        this.runs.set(runs);
+        if (runs.length) this.selectRun(runs.some((r) => r.file === file) ? file : runs[0].file);
+      },
+      error: () => undefined,
     });
   }
 

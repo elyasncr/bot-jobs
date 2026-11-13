@@ -32,8 +32,9 @@ export class ApiService {
     return this.local(this.http.post<BenchmarkStatus>('/api/benchmark/run', { models }));
   }
 
+  /** Consulta periódica: uma falha pontual não deve acender o aviso global. */
   benchmarkStatus(): Observable<BenchmarkStatus> {
-    return this.track(this.http.get<BenchmarkStatus>('/api/benchmark/status'));
+    return this.local(this.http.get<BenchmarkStatus>('/api/benchmark/status'));
   }
 
   /** Sem `note`, o comentário atual é mantido. Erros de nota não vão para o aviso global. */

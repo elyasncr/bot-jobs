@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { EMPTY, Subscription, catchError, switchMap, takeWhile, timer } from 'rxjs';
+import { EMPTY, Subscription, catchError, exhaustMap, takeWhile, timer } from 'rxjs';
 
 import { ApiService } from '../core/api.service';
 import { BenchmarkModelOption, BenchmarkStatus } from '../core/models';
@@ -18,11 +18,11 @@ const POLL_MS = 3000;
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '(document:click)': 'onDocumentClick($event)',
-    '(document:keydown.escape)': 'open.set(false)',
+    '(document:keydown.escape)': 'close()',
   },
   template: `
     <div class="wrap">
-      <button type="button" class="trigger" [disabled]="running()" [attr.aria-expanded]="open()" (click)="toggle()">
+      <button #trigger type="button" class="trigger" [disabled]="running()" [attr.aria-expanded]="open()" (click)="toggle()">
         {{ running() ? 'Rodando…' : 'Rodar benchmark' }}
       </button>
       @if (open()) {
@@ -35,34 +35,38 @@ const POLL_MS = 3000;
           @if (panelError(); as e) {
             <p class="error">{{ e }}</p>
           }
+          @if (!loadingOptions() && !panelError() && !options().length) {
+            <p class="muted">Nenhum modelo de LLM instalado no Ollama.</p>
+          }
           @if (options().length) {
             <fieldset>
               <legend>Modelos</legend>
-              @for (o of options(); track o.name) {
+              @for (o of options(); track o.name; let i = $index) {
                 <label class="opt">
-                  <input type="checkbox" [checked]="selected().includes(o.name)"
+                  <input type="checkbox" [attr.aria-describedby]="o.warning ? 'warn-' + i : null" [checked]="selected().includes(o.name)"
                          (change)="toggleModel(o.name, $any($event.target).checked)" />
                   <span>{{ o.name }}</span>
                 </label>
                 @if (o.warning) {
-                  <span class="warn">{{ o.warning }}</span>
+                  <span class="warn" [id]="'warn-' + i">{{ o.warning }}</span>
                 }
               }
             </fieldset>
             <p class="muted">{{ jobsText() }}</p>
-            <div class="actions">
-              <button type="button" class="ghost" (click)="open.set(false)">Cancelar</button>
-              <button type="button" [disabled]="!selected().length || starting()" (click)="start()">Rodar</button>
-            </div>
           }
+          <div class="actions">
+            <button type="button" class="ghost" (click)="close()">Cancelar</button>
+            <button type="button" [disabled]="!selected().length || starting()" (click)="start()">Rodar</button>
+          </div>
         </div>
       }
     </div>
     @if (status(); as s) {
       @if (s.state === 'running') {
-        <div class="strip" role="status">
+        <div class="strip">
           <span>{{ progressText(s) }}</span>
-          <div class="bar"><div class="fill" [style.width.%]="progressPercent(s)"></div></div>
+          <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+               [attr.aria-valuenow]="progressPercent(s)" [attr.aria-label]="progressText(s)"><div class="fill" [style.width.%]="progressPercent(s)"></div></div>
         </div>
       } @else if (s.state === 'error') {
         <div class="strip error" role="alert">
@@ -74,7 +78,7 @@ const POLL_MS = 3000;
   `,
   styles: `
     :host { display: contents; }
-    .wrap { position: relative; }
+    .wrap { position: relative; margin-left: auto; }
     .trigger {
       all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; height: 36px; padding: 0 14px;
       border-radius: 8px; background: var(--accent); color: var(--on-accent); font-size: 0.88rem; font-weight: 600; white-space: nowrap;
@@ -106,10 +110,11 @@ const POLL_MS = 3000;
     .fill { height: 100%; background: var(--accent); transition: width 0.4s ease; }
     .strip.error { grid-template-columns: 1fr auto; background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
     .close { all: unset; cursor: pointer; }
+    .ghost:focus-visible, .close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     @media (max-width: 720px) {
       .backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: var(--backdrop); }
       .panel { position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0;
-               padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+               padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); max-height: 85vh; overflow-y: auto; }
       .strip { grid-template-columns: 1fr; }
     }
   `,
@@ -118,6 +123,7 @@ export class RunBenchmark {
   private readonly api = inject(ApiService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly trigger = viewChild<ElementRef<HTMLButtonElement>>('trigger');
   private polling?: Subscription;
 
   /** Nome do arquivo do resultado novo (data/eval/results/eval_*.json). */
@@ -138,11 +144,14 @@ export class RunBenchmark {
 
   constructor() {
     // Rodada iniciada em outra aba ou no celular: retoma o acompanhamento.
-    this.api.benchmarkStatus().subscribe((s) => {
-      if (s.state === 'running') {
-        this.status.set(s);
-        this.poll();
-      }
+    this.api.benchmarkStatus().subscribe({
+      next: (s) => {
+        if (s.state === 'running') {
+          this.status.set(s);
+          this.poll();
+        }
+      },
+      error: () => undefined,
     });
   }
 
@@ -152,6 +161,7 @@ export class RunBenchmark {
       return;
     }
     this.open.set(true);
+    this.options.set([]);
     this.panelError.set(null);
     this.loadingOptions.set(true);
     this.api.benchmarkModels().subscribe({
@@ -166,6 +176,12 @@ export class RunBenchmark {
         this.loadingOptions.set(false);
       },
     });
+  }
+
+  protected close(): void {
+    if (!this.open()) return;
+    this.open.set(false);
+    this.trigger()?.nativeElement.focus();
   }
 
   protected toggleModel(name: string, checked: boolean): void {
@@ -200,11 +216,15 @@ export class RunBenchmark {
     this.polling?.unsubscribe();
     this.polling = timer(POLL_MS, POLL_MS)
       .pipe(
-        switchMap(() => this.api.benchmarkStatus().pipe(catchError(() => EMPTY))), // falha pontual: tenta no próximo ciclo
+        exhaustMap(() => this.api.benchmarkStatus().pipe(catchError(() => EMPTY))), // falha pontual: tenta no próximo ciclo
         takeWhile((s) => s.state === 'running', true),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((s) => {
+        if (this.status()?.state === 'running' && s.state === 'idle') {
+          this.status.set({ ...s, state: 'error', error: 'A rodada foi interrompida (o dashboard foi reiniciado).' });
+          return;
+        }
         this.status.set(s);
         if (s.state === 'done' && s.result_file) this.finished.emit(s.result_file);
       });
