@@ -50,7 +50,12 @@ def add_archive_jobs(settings: Settings, n: int | None = None) -> AddResult:
         candidates = evaluation.pick_diverse(
             candidates, n, key=lambda j: str(j.score.total // 20) if j.score else "estimativa"
         )
-    added = evaluation.save_eval_jobs(candidates, _jobs_dir(settings))
+    return add_jobs(settings, candidates)
+
+
+def add_jobs(settings: Settings, jobs: list[Job]) -> AddResult:
+    """Save jobs into the benchmark set and create their labels.yaml entries."""
+    added = evaluation.save_eval_jobs(jobs, _jobs_dir(settings))
     all_jobs = evaluation.load_eval_jobs(_jobs_dir(settings))
     new_labels = evaluation.ensure_label_entries(settings.eval_dir / "labels.yaml", all_jobs)
     return AddResult(added=added, total=len(all_jobs), new_labels=new_labels)
@@ -66,6 +71,8 @@ def run_benchmark(
     on_progress: Callable[[str, int, int], None] | None = None,
 ) -> Path:
     """Score the benchmark set with each model, save data/eval/results/eval_*.json and the report."""
+    if not models:
+        raise EvalRunnerError("Nenhum modelo selecionado.")
     jobs = evaluation.load_eval_jobs(_jobs_dir(settings))[:limit]
     if not jobs:
         raise EvalRunnerError(NO_JOBS_MESSAGE)
@@ -85,7 +92,7 @@ def run_benchmark(
         "num_ctx": llm.num_ctx,
         "temperature": llm.temperature,
         "think": llm.think,
-        "models": models,
+        "models": list(models),
     }
     payload = evaluation.results_payload(results, [evaluation.JobMeta.from_job(j) for j in jobs], meta)
     results_path = evaluation.save_results(settings.eval_dir / "results", payload)

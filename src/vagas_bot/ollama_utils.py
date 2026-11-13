@@ -31,8 +31,8 @@ def list_models(host: str, timeout_s: float = 5.0) -> list[OllamaModel]:
     found = []
     for item in response.models:
         if item.model:
-            details = getattr(item, "details", None)
-            found.append(OllamaModel(item.model, (getattr(details, "family", None) or "") if details else ""))
+            family = getattr(getattr(item, "details", None), "family", None) or ""
+            found.append(OllamaModel(item.model, family))
     return sorted(found, key=lambda m: m.name)
 
 

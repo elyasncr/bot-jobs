@@ -149,10 +149,7 @@ def eval_snapshot(
         search = settings.config.search.model_copy(update={"date_posted": date_posted})
         jobs = apply_filters(dedupe(source.fetch(search), set()), settings.config.filters)
         picked = evaluation.pick_diverse(jobs, n, key=lambda j: source.origin_by_fingerprint.get(j.fingerprint, "?"))
-        written = evaluation.save_eval_jobs(picked, jobs_dir)
-        all_jobs = evaluation.load_eval_jobs(jobs_dir)
-        added = evaluation.ensure_label_entries(settings.eval_dir / "labels.yaml", all_jobs)
-        result = eval_runner.AddResult(added=written, total=len(all_jobs), new_labels=added)
+        result = eval_runner.add_jobs(settings, picked)
     console.print(f"{result.added} vagas novas salvas; {result.total} no total em {jobs_dir}.")
     console.print(f"{result.new_labels} entradas novas em data/eval/labels.yaml (preencha score 0-100 para o Spearman).")
 

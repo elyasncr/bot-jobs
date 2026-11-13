@@ -123,8 +123,27 @@ def test_run_models_reports_progress_per_model(project_dir: Path, monkeypatch: p
         make_scorer=lambda s, m: ScriptedScorer(f"ollama/{m}", [50, 50], down=m == "b:1b"),
         on_progress=lambda model, done, total: seen.append((model, done, total)),
     )
-    # a:1b: 1 tentativa + o fechamento do modelo; b:1b indisponível conta como concluído
-    assert seen == [("a:1b", 1, 1), ("a:1b", 1, 1), ("b:1b", 1, 1)]
+    # início do modelo (0), 1 tentativa, fechamento; b:1b indisponível: início + concluído
+    assert seen == [("a:1b", 0, 1), ("a:1b", 1, 1), ("a:1b", 1, 1), ("b:1b", 0, 1), ("b:1b", 1, 1)]
+
+
+def test_run_models_unloads_when_evaluation_raises(project_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = load_settings(project_dir / "config.yaml")
+    monkeypatch.setattr(evaluation, "gpu_memory_used_gb", lambda: None)
+    monkeypatch.setattr(evaluation, "loaded_vram_gb", lambda host, model: None)
+    unloaded: list[str] = []
+    monkeypatch.setattr(evaluation, "unload_model", lambda host, model: unloaded.append(model))
+
+    def boom(model: str, done: int, total: int) -> None:
+        if done == 1:  # primeiro evento por tentativa
+            raise RuntimeError("cancelado")
+
+    with pytest.raises(RuntimeError, match="cancelado"):
+        evaluation.run_models(
+            settings, ["a:1b"], _jobs(1), "cv", PREFS, runs=1,
+            make_scorer=lambda s, m: ScriptedScorer(f"ollama/{m}", [50, 50]), on_progress=boom,
+        )
+    assert unloaded == ["a:1b"]
 
 
 def test_summarize_metrics() -> None:

@@ -304,8 +304,8 @@ def run_models(
 ) -> list[ModelRun]:
     """One model at a time; each is unloaded at the end so the next gets the whole GPU.
 
-    on_progress(model, done, total) after each attempt, plus once with done=total when the model ends
-    (also when it is unavailable), so a progress bar never gets stuck.
+    on_progress(model, done, total): done=0 when a model starts, after each attempt, and done=total when it ends
+    (also when unavailable), so a progress bar never gets stuck; unload runs even if evaluation raises.
     """
     results = []
     total = runs * len(jobs)
@@ -314,10 +314,16 @@ def run_models(
         scorer = make_scorer(settings, model)
         baseline = gpu_memory_used_gb()
         step = (lambda done, tot, m=model: on_progress(m, done, tot)) if on_progress else None
-        run = evaluate_model(scorer, jobs, cv_md, prefs, runs, warmup, on_progress=step)
-        if run.available or run.trials:
-            run.vram_gb = _vram_delta(baseline, gpu_memory_used_gb()) or loaded_vram_gb(settings.ollama_host, model)
-            unload_model(settings.ollama_host, model)
+        if on_progress:
+            on_progress(model, 0, total)  # a UI passa a mostrar este modelo enquanto ele carrega
+        run: ModelRun | None = None
+        try:
+            run = evaluate_model(scorer, jobs, cv_md, prefs, runs, warmup, on_progress=step)
+            if run.available or run.trials:
+                run.vram_gb = _vram_delta(baseline, gpu_memory_used_gb()) or loaded_vram_gb(settings.ollama_host, model)
+        finally:
+            if run is None or run.available or run.trials:  # erro no meio: o modelo pode estar carregado
+                unload_model(settings.ollama_host, model)
         if on_progress:
             on_progress(model, total, total)
         results.append(run)

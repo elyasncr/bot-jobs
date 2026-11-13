@@ -56,6 +56,17 @@ def test_add_archive_jobs_respects_n(settings: Settings) -> None:
     assert eval_runner.pending_archive_jobs(settings) == 1
 
 
+def test_add_archive_jobs_with_n_picks_among_new_only(settings: Settings) -> None:
+    jobs = [make_job(title=f"AI {i}") for i in range(3)]
+    _archive(settings, jobs, [_scored(j, 20 * i) for i, j in enumerate(jobs)], set())
+    evaluation.save_eval_jobs(jobs[1:], settings.eval_dir / "jobs")  # as 2 mais recentes já no conjunto
+
+    result = eval_runner.add_archive_jobs(settings, n=1)
+
+    assert result.added == 1
+    assert eval_runner.pending_archive_jobs(settings) == 0
+
+
 def test_add_archive_jobs_without_archive(settings: Settings) -> None:
     assert eval_runner.pending_archive_jobs(settings) == 0
     assert eval_runner.add_archive_jobs(settings) == AddResult(added=0, total=0, new_labels=0)
@@ -72,7 +83,12 @@ def test_run_benchmark_saves_results_and_report(settings: Settings, monkeypatch:
     assert path.is_file() and path.parent == settings.eval_dir / "results"
     assert evaluation.load_results(path)[2]["models"] == ["m1:7b"]
     assert "ollama/m1:7b" in (settings.root / "eval_report.md").read_text(encoding="utf-8")
-    assert seen[-1] == ("m1:7b", 2, 2)
+    assert seen == [("m1:7b", 0, 2), ("m1:7b", 1, 2), ("m1:7b", 2, 2), ("m1:7b", 2, 2)]
+
+
+def test_run_benchmark_without_models(settings: Settings) -> None:
+    with pytest.raises(EvalRunnerError, match="Nenhum modelo"):
+        eval_runner.run_benchmark(settings, [])
 
 
 def test_run_benchmark_without_jobs(settings: Settings) -> None:
