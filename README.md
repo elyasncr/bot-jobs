@@ -74,7 +74,7 @@ uv run python -m vagas_bot dashboard                # abre http://127.0.0.1:8765
 ```
 
 - **Vagas:** um funil por etapa (clicar filtra), filtros em menus e guardados na URL (dá para salvar o link), tabela ordenável e um painel com a descrição, as notas parciais do LLM, os pontos fortes e as lacunas. A sua nota (0–100) e o comentário gravam em `data/eval/labels.yaml`.
-- **Benchmark:** cartões com o vencedor de cada critério (e empates), a mesma tabela do `eval_report.md` agrupada por tema, com o melhor valor destacado, um gráfico de notas por vaga e por modelo, e as notas lado a lado. Ao salvar uma nota sua, o Spearman é recalculado.
+- **Benchmark:** cartões com o vencedor de cada critério (e empates), a mesma tabela do `eval_report.md` agrupada por tema, com o melhor valor destacado, um gráfico de notas por vaga e por modelo, e as notas lado a lado. Ao salvar uma nota sua, o Spearman é recalculado. O botão **Rodar benchmark** inclui no conjunto as vagas novas avaliadas pelo bot (as de `data/jobs.jsonl` que ainda não estão em `data/eval/jobs/`), roda os modelos marcados (os da última rodada vêm marcados) e mostra o andamento; ao terminar, a rodada nova aparece selecionada. Uma rodada por vez; se o dashboard for reiniciado no meio, ela se perde (nada fica pela metade em disco).
 - **Privacidade:** o servidor só aceita conexões da sua máquina (127.0.0.1) e usa só a biblioteca padrão do Python.
 - **No celular (rede de casa):**
   1. Rode uma vez, como administrador, `powershell -ExecutionPolicy Bypass -File scripts\allow_dashboard_lan.ps1`. Ele marca a rede como Privada e libera a porta 8765 só para a rede local.
