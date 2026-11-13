@@ -20,7 +20,7 @@ from urllib.parse import SplitResult, parse_qs, unquote, urlencode, urlsplit, ur
 
 from vagas_bot.config import Settings
 from vagas_bot.dashboard import data
-from vagas_bot.dashboard.benchmark_job import BenchmarkJob
+from vagas_bot.dashboard.benchmark_job import ALREADY_RUNNING, BenchmarkJob
 from vagas_bot.dashboard.data import DashboardError
 from vagas_bot.log import get_logger
 
@@ -162,11 +162,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Acesso restrito: abra o link com o código de acesso."})
             return
+        # CSRF: um <form> de outro site só envia text/plain e similares, e o navegador marca a origem
+        media_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if media_type != "application/json":
+            self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "Envie JSON (Content-Type: application/json)."})
+            return
+        if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none"):
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": "Origem não permitida."})
+            return
         if url.path != "/api/benchmark/run":
             self._api(_not_found)
             return
-        self._api(lambda: self.benchmark.start(data.validate_benchmark_models(self.settings, self._json_body())),
-                  status=HTTPStatus.ACCEPTED)
+        self._api(self._start_benchmark, status=HTTPStatus.ACCEPTED)
+
+    def _start_benchmark(self) -> dict[str, Any]:
+        if self.benchmark.status()["state"] == "running":
+            raise DashboardError(409, ALREADY_RUNNING)
+        return self.benchmark.start(data.validate_benchmark_models(self.settings, self._json_body()))
 
     # --- API ---
 
@@ -230,7 +242,7 @@ def make_server(
     trust_local: bool = True, benchmark: BenchmarkJob | None = None,
 ) -> ThreadingHTTPServer:
     """token=None: localhost only, no code. With a token (LAN mode), other devices need it."""
-    job = benchmark or BenchmarkJob(settings)  # um só por servidor: todas as abas veem a mesma rodada
+    job = benchmark if benchmark is not None else BenchmarkJob(settings)  # um só por servidor: todas as abas veem a mesma rodada
     handler = partial(DashboardHandler, settings=settings, dist=dist, benchmark=job, token=token,
                       trust_local=trust_local)
     return ThreadingHTTPServer((host, port), handler)

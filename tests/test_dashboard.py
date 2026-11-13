@@ -335,6 +335,7 @@ INSTALLED = [
     OllamaModel("gemma4:12b", "gemma4"),
     OllamaModel("gpt-oss:20b", "gpt-oss"),
     OllamaModel("qwen3.5:9b", "qwen35"),
+    OllamaModel("qwen3-embedding:8b", "qwen3"),
 ]
 
 
@@ -414,7 +415,64 @@ def test_server_benchmark_routes(bench_server: tuple[tuple[str, int], BenchmarkJ
     assert _request(server, "POST", "/api/benchmark/run", b"{nao e json")[0] == 400
     status, _, body = _request(server, "POST", "/api/benchmark/run", {"models": ["gemma4:12b"]})
     assert status == 202 and json.loads(body)["state"] == "running"
-    job.wait(5)
+    assert job.wait(5)
     final = json.loads(_request(server, "GET", "/api/benchmark/status")[2])
     assert final["state"] == "done" and final["result_file"] == "eval_20261113_100000.json"
     assert _request(server, "POST", "/api/nada", {})[0] == 404
+
+
+def _raw_post(server: tuple[str, int], headers: dict[str, str]) -> tuple[int, dict[str, Any]]:
+    conn = http.client.HTTPConnection(*server, timeout=10)
+    conn.request("POST", "/api/benchmark/run", body=json.dumps({"models": ["gemma4:12b"]}).encode(), headers=headers)
+    resp = conn.getresponse()
+    body = json.loads(resp.read())
+    conn.close()
+    return resp.status, body
+
+
+def test_post_rejects_non_json_content_type(bench_server: tuple[tuple[str, int], BenchmarkJob]) -> None:
+    server, job = bench_server
+    status, body = _raw_post(server, {"Content-Type": "text/plain"})
+    assert status == 415 and body == {"error": "Envie JSON (Content-Type: application/json)."}
+    assert job.status()["state"] == "idle"
+
+
+def test_post_rejects_cross_site(bench_server: tuple[tuple[str, int], BenchmarkJob]) -> None:
+    server, job = bench_server
+    status, body = _raw_post(server, {"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"})
+    assert status == 403 and body == {"error": "Origem não permitida."}
+    assert job.status()["state"] == "idle"
+
+
+def test_server_second_run_conflicts(settings: Settings, dist: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(data, "list_models", lambda host: INSTALLED)
+    release = threading.Event()
+
+    def slow_run(s: Settings, models: list[str], on_progress: Any) -> Path:
+        release.wait(5)
+        return Path("eval_20261113_100000.json")
+
+    job = BenchmarkJob(settings, add=lambda s: AddResult(0, 1, 0), run=slow_run)
+    httpd = make_server(settings, dist, port=0, benchmark=job)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    server = (httpd.server_address[0], httpd.server_address[1])
+    try:
+        assert _request(server, "POST", "/api/benchmark/run", {"models": ["gemma4:12b"]})[0] == 202
+        status, _, body = _request(server, "POST", "/api/benchmark/run", {"models": ["gemma4:12b"]})
+        assert status == 409 and "Já existe" in json.loads(body)["error"]
+    finally:
+        release.set()
+        assert job.wait(5)
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_benchmark_models_survives_corrupt_results(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(data, "list_models", lambda host: INSTALLED)
+    results = settings.eval_dir / "results"
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "eval_20261109_100000.json").write_text("{x", encoding="utf-8")
+
+    by_name = {m["name"]: m for m in data.benchmark_models(settings)["models"]}
+    assert by_name["qwen3.5:9b"]["default"] and not by_name["gemma4:12b"]["default"]
+    assert "qwen3-embedding:8b" not in by_name

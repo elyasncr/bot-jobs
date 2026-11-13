@@ -4,7 +4,9 @@ Metrics reuse evaluation.py / eval_report.py, so the page shows the same numbers
 eval_report.md.
 """
 
+import json
 import re
+import threading
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -228,6 +230,10 @@ def find_job(settings: Settings, job_id: str) -> Job | None:
     return None
 
 
+# labels.yaml é reescrito pelas threads de requisição e pela thread do benchmark
+LABELS_LOCK = threading.Lock()
+
+
 def save_label(settings: Settings, job_id: str, body: Any) -> dict[str, Any]:
     """PUT /api/labels/{id}: {"score": 0-100 | null, "note": "..."}."""
     if not isinstance(body, dict) or "score" not in body:
@@ -241,13 +247,15 @@ def save_label(settings: Settings, job_id: str, body: Any) -> dict[str, Any]:
     if note is None:  # sem "note" no corpo: mantém o comentário que já existe
         note = str(evaluation.load_label_entries(labels_path).get(job_id, {}).get("note") or "")
     if score is None:
-        evaluation.remove_label(labels_path, job_id)
+        with LABELS_LOCK:
+            evaluation.remove_label(labels_path, job_id)
         return {"id": job_id, "my_score": None, "my_note": ""}
     job = find_job(settings, job_id)
     if job is None:
         raise DashboardError(404, f"Vaga não encontrada: {job_id}")
-    evaluation.save_eval_jobs([job], settings.eval_dir / "jobs")
-    evaluation.set_label(labels_path, job.id, job.title, job.company, score, note.strip())
+    with LABELS_LOCK:
+        evaluation.save_eval_jobs([job], settings.eval_dir / "jobs")
+        evaluation.set_label(labels_path, job.id, job.title, job.company, score, note.strip())
     return {"id": job.id, "my_score": score, "my_note": note.strip()}
 
 
@@ -257,30 +265,43 @@ EMBEDDING_FAMILIES = {"bert", "nomic-bert"}
 UNSTABLE_MODELS = {"gpt-oss": "Derruba o Ollama nesta GPU"}  # prefixo do nome → aviso
 
 
-def _llm_models(settings: Settings) -> list[str]:
+def _llm_models(settings: Settings) -> list[tuple[str, str]]:
     """Installed Ollama models usable as the LLM (embedding models left out)."""
     try:
         installed = list_models(settings.ollama_host)
     except OllamaUnavailable as exc:
         raise DashboardError(503, f"Ollama indisponível: {exc}") from exc
     embedder = normalize_model_name(settings.config.embeddings.ollama.model)
-    return [m.name for m in installed
-            if m.family not in EMBEDDING_FAMILIES and normalize_model_name(m.name) != embedder]
+    return [(m.name, m.family) for m in installed
+            if m.family not in EMBEDDING_FAMILIES and "embed" not in m.name.lower()
+            and normalize_model_name(m.name) != embedder]
 
 
-def _warning(name: str) -> str | None:
-    return next((text for prefix, text in UNSTABLE_MODELS.items() if name.startswith(prefix)), None)
+def _warning(name: str, family: str) -> str | None:
+    return next((text for prefix, text in UNSTABLE_MODELS.items()
+                 if name.startswith(prefix) or family.startswith(prefix)), None)
+
+
+def _last_run_models(settings: Settings) -> list[str]:
+    """Models of the latest saved run, read from meta only (no need to parse every trial)."""
+    latest = evaluation.latest_results(_results_dir(settings))
+    if latest is None:
+        return []
+    try:
+        models = json.loads(latest.read_text(encoding="utf-8")).get("meta", {}).get("models")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [m for m in models if isinstance(m, str)] if isinstance(models, list) else []
 
 
 def benchmark_models(settings: Settings) -> dict[str, Any]:
     """GET /api/benchmark/models: options for the button, pre-checked like the last run."""
-    names = _llm_models(settings)
-    latest = evaluation.latest_results(_results_dir(settings))
-    previous = evaluation.load_results(latest)[2].get("models", []) if latest else [settings.config.llm.ollama.model]
+    installed = _llm_models(settings)
+    previous = _last_run_models(settings) or [settings.config.llm.ollama.model]
     wanted = {normalize_model_name(m) for m in previous}
     models = []
-    for name in names:
-        warning = _warning(name)
+    for name, family in installed:
+        warning = _warning(name, family)
         models.append({"name": name, "default": warning is None and normalize_model_name(name) in wanted,
                        "warning": warning})
     return {
@@ -295,7 +316,7 @@ def validate_benchmark_models(settings: Settings, body: Any) -> list[str]:
     models = body.get("models") if isinstance(body, dict) else None
     if not isinstance(models, list) or not models or not all(isinstance(m, str) for m in models):
         raise DashboardError(400, 'Corpo inválido: envie {"models": ["qwen3:14b", ...]}')
-    installed = set(_llm_models(settings))
+    installed = {name for name, _ in _llm_models(settings)}
     unknown = [m for m in models if m not in installed]
     if unknown:
         raise DashboardError(400, f"Modelo não instalado no Ollama: {', '.join(unknown)}")

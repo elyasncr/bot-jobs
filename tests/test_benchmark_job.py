@@ -35,7 +35,7 @@ def test_runs_to_done_with_progress(settings: Settings) -> None:
     assert job.status()["state"] == "idle"
     first = job.start(["a:1b", "b:2b"])
     assert first["state"] == "running" and first["model_count"] == 2 and first["started_at"]
-    job.wait(5)
+    assert job.wait(5)
 
     status = job.status()
     assert status["state"] == "done" and status["result_file"] == "eval_20261113_100000.json"
@@ -57,10 +57,10 @@ def test_second_start_conflicts_until_done(settings: Settings) -> None:
         job.start(["a:1b"])
     assert err.value.status == 409
     release.set()
-    job.wait(5)
+    assert job.wait(5)
     assert job.status()["state"] == "done"
     assert job.start(["a:1b"])["state"] == "running"  # depois de terminar, pode rodar de novo
-    job.wait(5)
+    assert job.wait(5)
 
 
 def test_failure_becomes_error_state(settings: Settings) -> None:
@@ -69,7 +69,7 @@ def test_failure_becomes_error_state(settings: Settings) -> None:
 
     job = BenchmarkJob(settings, add=_add, run=failing_run)
     job.start(["a:1b"])
-    job.wait(5)
+    assert job.wait(5)
     status = job.status()
     assert status["state"] == "error" and status["error"] == "Nenhuma vaga em data/eval/jobs/."
     assert status["finished_at"]

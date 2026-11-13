@@ -12,12 +12,13 @@ from typing import Any
 
 from vagas_bot import eval_runner
 from vagas_bot.config import Settings
-from vagas_bot.dashboard.data import DashboardError
+from vagas_bot.dashboard.data import LABELS_LOCK, DashboardError
 from vagas_bot.eval_runner import AddResult
 from vagas_bot.log import get_logger
 
 log = get_logger("dashboard")
 
+ALREADY_RUNNING = "Já existe um benchmark rodando. Aguarde terminar."
 AddFn = Callable[[Settings], AddResult]
 RunFn = Callable[..., Path]  # (settings, models, on_progress=...) -> caminho do resultado
 
@@ -50,23 +51,30 @@ class BenchmarkJob:
     def start(self, models: list[str]) -> dict[str, Any]:
         with self._lock:
             if self._state["state"] == "running":
-                raise DashboardError(409, "Já existe um benchmark rodando. Aguarde terminar.")
+                raise DashboardError(409, ALREADY_RUNNING)
             self._state = _idle() | {
                 "state": "running", "phase": "adding", "models": list(models), "model_count": len(models),
                 "started_at": _now(),
             }
             self._thread = threading.Thread(target=self._work, args=(list(models),), name="benchmark", daemon=True)
-            self._thread.start()
-        return self.status()
+            try:
+                self._thread.start()
+            except BaseException:
+                self._state = _idle()
+                raise
+            return dict(self._state, models=list(self._state["models"]))
 
-    def wait(self, timeout: float | None = None) -> None:
-        """Block until the current run ends (tests)."""
-        if self._thread is not None:
-            self._thread.join(timeout)
+    def wait(self, timeout: float | None = None) -> bool:
+        """Block until the current run ends (tests). False if it is still running after the timeout."""
+        if self._thread is None:
+            return True
+        self._thread.join(timeout)
+        return not self._thread.is_alive()
 
     def _work(self, models: list[str]) -> None:
         try:
-            added = self._add(self._settings)
+            with LABELS_LOCK:  # add_jobs reescreve o labels.yaml
+                added = self._add(self._settings)
             self._update(phase="running", added=added.added)
             path = self._run(self._settings, models, on_progress=self._on_progress)
             self._update(state="done", phase=None, result_file=path.name, finished_at=_now())
