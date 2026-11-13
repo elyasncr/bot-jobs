@@ -4,6 +4,7 @@ import { ApiService } from '../core/api.service';
 import { BenchJob, BenchmarkPayload, BenchmarkRun, ModelSummary, PjStatus, shortModel } from '../core/models';
 import { LabelInput, SaveState } from '../shared/label-input';
 import { BenchmarkSummary, bestModels } from './benchmark-summary';
+import { RunBenchmark } from './run-benchmark';
 import { ScoreChart, modelColor } from './score-chart';
 
 const PJ_SHORT: Record<PjStatus, string> = { pj: 'PJ', both: 'PJ/CLT', clt: 'CLT', uncertain: '?' };
@@ -26,7 +27,7 @@ interface Cell {
 
 @Component({
   selector: 'app-benchmark-page',
-  imports: [BenchmarkSummary, ScoreChart, LabelInput],
+  imports: [BenchmarkSummary, ScoreChart, LabelInput, RunBenchmark],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="head">
@@ -44,12 +45,13 @@ interface Cell {
           </select>
         </label>
       }
+      <app-run-benchmark (finished)="onBenchmarkFinished($event)" />
     </header>
 
     @if (!runs().length && !loading()) {
       <div class="empty">
         <strong>Nenhum benchmark salvo ainda.</strong>
-        <p>Rode <code>uv run python -m vagas_bot eval-models qwen3.5:9b gemma4:12b</code> e recarregue.</p>
+        <p>Clique em <strong>Rodar benchmark</strong> (ou rode <code>uv run python -m vagas_bot eval-models qwen3.5:9b gemma4:12b</code>) e recarregue.</p>
       </div>
     } @else if (payload(); as p) {
       <div class="meta">
@@ -151,7 +153,8 @@ interface Cell {
   `,
   styles: `
     :host { display: block; }
-    .head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; margin-bottom: 12px; }
+    .head { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 12px; }
+    .head > div:first-child { margin-right: auto; }
     h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.02em; }
     .head p { margin: 2px 0 0; color: var(--muted); }
     .run { display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem; font-weight: 600; color: var(--faint);
@@ -305,6 +308,14 @@ export class BenchmarkPage {
   protected selectRun(file: string): void {
     this.run.set(file);
     this.load();
+  }
+
+  /** Rodada nova terminou: recarrega a lista e mostra o resultado novo. */
+  protected onBenchmarkFinished(file: string): void {
+    this.api.benchmarkRuns().subscribe((runs) => {
+      this.runs.set(runs);
+      if (runs.length) this.selectRun(runs.some((r) => r.file === file) ? file : runs[0].file);
+    });
   }
 
   private load(): void {
