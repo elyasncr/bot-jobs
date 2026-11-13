@@ -20,6 +20,7 @@ from urllib.parse import SplitResult, parse_qs, unquote, urlencode, urlsplit, ur
 
 from vagas_bot.config import Settings
 from vagas_bot.dashboard import data
+from vagas_bot.dashboard.benchmark_job import BenchmarkJob
 from vagas_bot.dashboard.data import DashboardError
 from vagas_bot.log import get_logger
 
@@ -73,11 +74,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
     server_version = "vagas-bot-dashboard"
 
     def __init__(
-        self, *args: Any, settings: Settings, dist: Path, token: str | None = None, trust_local: bool = True,
+        self, *args: Any, settings: Settings, dist: Path, benchmark: BenchmarkJob, token: str | None = None,
+        trust_local: bool = True,
         **kwargs: Any,
     ) -> None:
         self.settings = settings
         self.dist = dist.resolve()
+        self.benchmark = benchmark
         self.token = token
         self.trust_local = trust_local
         super().__init__(*args, **kwargs)
@@ -133,6 +136,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             routes = {
                 "/api/jobs": lambda: data.job_rows(self.settings),
                 "/api/benchmark/runs": lambda: data.benchmark_runs(self.settings),
+                "/api/benchmark/models": lambda: data.benchmark_models(self.settings),
+                "/api/benchmark/status": lambda: self.benchmark.status(),
                 "/api/benchmark": lambda: data.benchmark_payload(self.settings, (query.get("run") or [None])[0]),
             }
             handler = routes.get(url.path)
@@ -152,6 +157,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         job_id = unquote(url.path[len(prefix):])
         self._api(lambda: data.save_label(self.settings, job_id, self._json_body()))
 
+    def do_POST(self) -> None:  # noqa: N802
+        url = urlsplit(self.path)
+        if not self._authorized():
+            self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Acesso restrito: abra o link com o código de acesso."})
+            return
+        if url.path != "/api/benchmark/run":
+            self._api(_not_found)
+            return
+        self._api(lambda: self.benchmark.start(data.validate_benchmark_models(self.settings, self._json_body())),
+                  status=HTTPStatus.ACCEPTED)
+
     # --- API ---
 
     def _json_body(self) -> Any:
@@ -163,9 +179,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise DashboardError(400, "JSON inválido.") from exc
 
-    def _api(self, produce: Any) -> None:
+    def _api(self, produce: Any, status: int = HTTPStatus.OK) -> None:
         try:
-            self._send_json(HTTPStatus.OK, produce())
+            self._send_json(status, produce())
         except DashboardError as exc:
             self._send_json(exc.status, {"error": exc.message})
         except Exception as exc:  # noqa: BLE001 — a tela recebe a mensagem em vez de uma conexão caída
@@ -211,10 +227,12 @@ def _not_found() -> Any:
 
 def make_server(
     settings: Settings, dist: Path, host: str = "127.0.0.1", port: int = 8765, token: str | None = None,
-    trust_local: bool = True,
+    trust_local: bool = True, benchmark: BenchmarkJob | None = None,
 ) -> ThreadingHTTPServer:
     """token=None: localhost only, no code. With a token (LAN mode), other devices need it."""
-    handler = partial(DashboardHandler, settings=settings, dist=dist, token=token, trust_local=trust_local)
+    job = benchmark or BenchmarkJob(settings)  # um só por servidor: todas as abas veem a mesma rodada
+    handler = partial(DashboardHandler, settings=settings, dist=dist, benchmark=job, token=token,
+                      trust_local=trust_local)
     return ThreadingHTTPServer((host, port), handler)
 
 

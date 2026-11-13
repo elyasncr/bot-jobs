@@ -291,6 +291,7 @@ def test_lan_requires_access_code(lan_server: tuple[str, int]) -> None:
     assert _raw(lan_server, "GET", "/vagas").status == 401
     assert _raw(lan_server, "GET", "/api/jobs").status == 401
     assert _raw(lan_server, "PUT", "/api/labels/x").status == 401
+    assert _raw(lan_server, "POST", "/api/benchmark/run").status == 401
     assert _raw(lan_server, "GET", "/?t=errado").status == 401
     assert _raw(lan_server, "GET", "/api/jobs", cookie="vb_token=errado").status == 401
 
@@ -319,3 +320,101 @@ def test_token_is_persisted(tmp_path: Path) -> None:
     path = tmp_path / ".dashboard_token"
     first = load_or_create_token(path)
     assert len(first) >= 20 and load_or_create_token(path) == first
+
+
+# --- botão Rodar benchmark ---
+
+from datetime import datetime  # noqa: E402
+
+from vagas_bot.dashboard.benchmark_job import BenchmarkJob  # noqa: E402
+from vagas_bot.eval_runner import AddResult  # noqa: E402
+from vagas_bot.ollama_utils import OllamaModel, OllamaUnavailable  # noqa: E402
+
+INSTALLED = [
+    OllamaModel("bge-m3:latest", "bert"),
+    OllamaModel("gemma4:12b", "gemma4"),
+    OllamaModel("gpt-oss:20b", "gpt-oss"),
+    OllamaModel("qwen3.5:9b", "qwen35"),
+]
+
+
+def test_benchmark_models_without_previous_run(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(data, "list_models", lambda host: INSTALLED)
+    job = make_job(title="AI A")
+    _archive(settings, date(2026, 11, 12), [job], [_scored(job)], set())
+
+    result = data.benchmark_models(settings)
+
+    assert [m["name"] for m in result["models"]] == ["gemma4:12b", "gpt-oss:20b", "qwen3.5:9b"]  # sem embedding
+    by_name = {m["name"]: m for m in result["models"]}
+    assert by_name["qwen3.5:9b"]["default"]  # sem rodada salva: o modelo do config.yaml
+    assert not by_name["gemma4:12b"]["default"]
+    assert by_name["gpt-oss:20b"]["warning"] and not by_name["gpt-oss:20b"]["default"]
+    assert result["pending_jobs"] == 1 and result["total_jobs"] == 0
+
+
+def test_benchmark_models_defaults_from_last_run(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(data, "list_models", lambda host: INSTALLED)
+    payload = evaluation.results_payload([], [], {"date": "2026-11-09T10:00:00",
+                                                  "models": ["gemma4:12b", "gpt-oss:20b"]})
+    evaluation.save_results(settings.eval_dir / "results", payload, datetime(2026, 11, 9, 10))
+
+    by_name = {m["name"]: m for m in data.benchmark_models(settings)["models"]}
+    assert by_name["gemma4:12b"]["default"]
+    assert not by_name["gpt-oss:20b"]["default"]  # instável: nunca vem marcado
+    assert not by_name["qwen3.5:9b"]["default"]
+
+
+def test_benchmark_models_ollama_down(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    def down(host: str) -> list[OllamaModel]:
+        raise OllamaUnavailable("Ollama não responde em http://x. Rode: ollama serve")
+
+    monkeypatch.setattr(data, "list_models", down)
+    with pytest.raises(DashboardError) as err:
+        data.benchmark_models(settings)
+    assert err.value.status == 503 and "Ollama" in err.value.message
+
+
+@pytest.mark.parametrize("body", [None, [], {}, {"models": []}, {"models": "qwen3.5:9b"}, {"models": [1]},
+                                  {"models": ["nao-instalado:1b"]}, {"models": ["bge-m3:latest"]}])
+def test_validate_benchmark_models_rejects(settings: Settings, monkeypatch: pytest.MonkeyPatch, body: Any) -> None:
+    monkeypatch.setattr(data, "list_models", lambda host: INSTALLED)
+    with pytest.raises(DashboardError) as err:
+        data.validate_benchmark_models(settings, body)
+    assert err.value.status == 400
+
+
+def test_validate_benchmark_models_dedupes(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(data, "list_models", lambda host: INSTALLED)
+    body = {"models": ["gemma4:12b", "qwen3.5:9b", "gemma4:12b"]}
+    assert data.validate_benchmark_models(settings, body) == ["gemma4:12b", "qwen3.5:9b"]
+
+
+@pytest.fixture
+def bench_server(settings: Settings, dist: Path,
+                 monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[tuple[str, int], BenchmarkJob]]:
+    monkeypatch.setattr(data, "list_models", lambda host: INSTALLED)
+    job = BenchmarkJob(settings, add=lambda s: AddResult(0, 1, 0),
+                       run=lambda s, models, on_progress: Path("eval_20261113_100000.json"))
+    httpd = make_server(settings, dist, port=0, benchmark=job)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield (httpd.server_address[0], httpd.server_address[1]), job
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def test_server_benchmark_routes(bench_server: tuple[tuple[str, int], BenchmarkJob]) -> None:
+    server, job = bench_server
+    status, _, body = _request(server, "GET", "/api/benchmark/models")
+    assert status == 200 and [m["name"] for m in json.loads(body)["models"]][0] == "gemma4:12b"
+    assert json.loads(_request(server, "GET", "/api/benchmark/status")[2])["state"] == "idle"
+
+    assert _request(server, "POST", "/api/benchmark/run", {"models": []})[0] == 400
+    assert _request(server, "POST", "/api/benchmark/run", b"{nao e json")[0] == 400
+    status, _, body = _request(server, "POST", "/api/benchmark/run", {"models": ["gemma4:12b"]})
+    assert status == 202 and json.loads(body)["state"] == "running"
+    job.wait(5)
+    final = json.loads(_request(server, "GET", "/api/benchmark/status")[2])
+    assert final["state"] == "done" and final["result_file"] == "eval_20261113_100000.json"
+    assert _request(server, "POST", "/api/nada", {})[0] == 404

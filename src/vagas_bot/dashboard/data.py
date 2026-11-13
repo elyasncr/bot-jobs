@@ -9,12 +9,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from vagas_bot import evaluation
+from vagas_bot import eval_runner, evaluation
 from vagas_bot.archive import archived_jobs, load_archive
 from vagas_bot.config import Settings
 from vagas_bot.eval_report import is_reliable, reading
 from vagas_bot.filters import detect_modality
 from vagas_bot.models import Job
+from vagas_bot.ollama_utils import OllamaUnavailable, list_models, normalize_model_name
 from vagas_bot.scoring.ranker import WEIGHTS, estimate_totals
 from vagas_bot.training.dataset import load_history
 from vagas_bot.training.labeling import job_from_history
@@ -248,3 +249,54 @@ def save_label(settings: Settings, job_id: str, body: Any) -> dict[str, Any]:
     evaluation.save_eval_jobs([job], settings.eval_dir / "jobs")
     evaluation.set_label(labels_path, job.id, job.title, job.company, score, note.strip())
     return {"id": job.id, "my_score": score, "my_note": note.strip()}
+
+
+# --- botão Rodar benchmark -------------------------------------------------------------
+
+EMBEDDING_FAMILIES = {"bert", "nomic-bert"}
+UNSTABLE_MODELS = {"gpt-oss": "Derruba o Ollama nesta GPU"}  # prefixo do nome → aviso
+
+
+def _llm_models(settings: Settings) -> list[str]:
+    """Installed Ollama models usable as the LLM (embedding models left out)."""
+    try:
+        installed = list_models(settings.ollama_host)
+    except OllamaUnavailable as exc:
+        raise DashboardError(503, f"Ollama indisponível: {exc}") from exc
+    embedder = normalize_model_name(settings.config.embeddings.ollama.model)
+    return [m.name for m in installed
+            if m.family not in EMBEDDING_FAMILIES and normalize_model_name(m.name) != embedder]
+
+
+def _warning(name: str) -> str | None:
+    return next((text for prefix, text in UNSTABLE_MODELS.items() if name.startswith(prefix)), None)
+
+
+def benchmark_models(settings: Settings) -> dict[str, Any]:
+    """GET /api/benchmark/models: options for the button, pre-checked like the last run."""
+    names = _llm_models(settings)
+    latest = evaluation.latest_results(_results_dir(settings))
+    previous = evaluation.load_results(latest)[2].get("models", []) if latest else [settings.config.llm.ollama.model]
+    wanted = {normalize_model_name(m) for m in previous}
+    models = []
+    for name in names:
+        warning = _warning(name)
+        models.append({"name": name, "default": warning is None and normalize_model_name(name) in wanted,
+                       "warning": warning})
+    return {
+        "models": models,
+        "pending_jobs": eval_runner.pending_archive_jobs(settings),
+        "total_jobs": len(evaluation.load_eval_jobs(settings.eval_dir / "jobs")),
+    }
+
+
+def validate_benchmark_models(settings: Settings, body: Any) -> list[str]:
+    """POST /api/benchmark/run body: {"models": [...]} with installed LLM models (no repeats)."""
+    models = body.get("models") if isinstance(body, dict) else None
+    if not isinstance(models, list) or not models or not all(isinstance(m, str) for m in models):
+        raise DashboardError(400, 'Corpo inválido: envie {"models": ["qwen3:14b", ...]}')
+    installed = set(_llm_models(settings))
+    unknown = [m for m in models if m not in installed]
+    if unknown:
+        raise DashboardError(400, f"Modelo não instalado no Ollama: {', '.join(unknown)}")
+    return list(dict.fromkeys(models))
