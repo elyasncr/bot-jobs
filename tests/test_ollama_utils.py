@@ -4,9 +4,11 @@ import pytest
 
 from vagas_bot import ollama_utils
 from vagas_bot.ollama_utils import (
+    OllamaModel,
     OllamaUnavailable,
     is_model_available,
     list_local_models,
+    list_models,
     normalize_model_name,
 )
 
@@ -43,3 +45,30 @@ def test_list_local_models_down(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ollama_utils.ollama, "Client", lambda **kw: _FakeClient(down=True))
     with pytest.raises(OllamaUnavailable, match="ollama serve"):
         list_local_models("http://x")
+
+
+class _FamilyClient:
+    def __init__(self, **_: object) -> None:
+        pass
+
+    def list(self) -> SimpleNamespace:
+        return SimpleNamespace(models=[
+            SimpleNamespace(model="qwen3:14b", details=SimpleNamespace(family="qwen3")),
+            SimpleNamespace(model="bge-m3:latest", details=SimpleNamespace(family="bert")),
+            SimpleNamespace(model="sem-detalhes:1b", details=None),
+        ])
+
+
+def test_list_models_with_family(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ollama_utils.ollama, "Client", lambda **kw: _FamilyClient())
+    assert list_models("http://x") == [
+        OllamaModel("bge-m3:latest", "bert"),
+        OllamaModel("qwen3:14b", "qwen3"),
+        OllamaModel("sem-detalhes:1b", ""),
+    ]
+
+
+def test_list_models_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ollama_utils.ollama, "Client", lambda **kw: _FakeClient(down=True))
+    with pytest.raises(OllamaUnavailable, match="ollama serve"):
+        list_models("http://x")

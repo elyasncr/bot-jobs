@@ -1,6 +1,7 @@
 """Shared helpers to talk to the local Ollama server (health and model availability)."""
 
 import time
+from dataclasses import dataclass
 
 import ollama
 
@@ -14,13 +15,29 @@ def normalize_model_name(name: str) -> str:
     return name if ":" in name else f"{name}:latest"
 
 
-def list_local_models(host: str, timeout_s: float = 5.0) -> set[str]:
+@dataclass(frozen=True)
+class OllamaModel:
+    name: str
+    family: str  # ex.: "qwen3", "gemma4"; "bert" = modelo de embedding
+
+
+def list_models(host: str, timeout_s: float = 5.0) -> list[OllamaModel]:
+    """Installed models with their family, sorted by name."""
     client = ollama.Client(host=host, timeout=timeout_s)
     try:
         response = client.list()
     except ConnectionError as exc:
         raise OllamaUnavailable(f"Ollama não responde em {host}. Rode: ollama serve") from exc
-    return {normalize_model_name(m.model) for m in response.models if m.model}
+    found = []
+    for item in response.models:
+        if item.model:
+            details = getattr(item, "details", None)
+            found.append(OllamaModel(item.model, (getattr(details, "family", None) or "") if details else ""))
+    return sorted(found, key=lambda m: m.name)
+
+
+def list_local_models(host: str, timeout_s: float = 5.0) -> set[str]:
+    return {normalize_model_name(m.name) for m in list_models(host, timeout_s)}
 
 
 def is_model_available(name: str, available: set[str]) -> bool:
