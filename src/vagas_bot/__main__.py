@@ -2,7 +2,6 @@
 
 import importlib.util
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -11,19 +10,17 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
-from vagas_bot import evaluation
+from vagas_bot import eval_runner, evaluation
 from vagas_bot.archive import archived_jobs, load_archive
 from vagas_bot.config import ConfigError, Settings, load_settings, missing_env
 from vagas_bot.cv import CVError, load_cv
 from vagas_bot.doctor import Status, run_checks
 from vagas_bot.embeddings.base import EmbedderUnavailable
-from vagas_bot.eval_report import render_report
 from vagas_bot.filters import apply_filters, dedupe
 from vagas_bot.log import get_logger, setup_logging
 from vagas_bot.notify.sample import sample_ranked
 from vagas_bot.pipeline import RunOptions, RunStats, run_pipeline, send_notification
 from vagas_bot.scoring.prerank import cv_to_text_compact, job_to_text
-from vagas_bot.scoring.prompts import prefs_from_config
 from vagas_bot.sources.jsearch import JSearchSource
 from vagas_bot.storage import StorageError
 from vagas_bot.training import dataset, labeling
@@ -141,10 +138,7 @@ def eval_snapshot(
     setup_logging(settings.logs_dir)
     jobs_dir = settings.eval_dir / "jobs"
     if from_archive:
-        jobs = archived_jobs(load_archive(settings.jobs_archive_path), {"evaluated", "emailed"})
-        picked = evaluation.pick_diverse(
-            list(reversed(jobs)), n, key=lambda j: str(j.score.total // 20) if j.score else "estimativa"
-        )
+        result = eval_runner.add_archive_jobs(settings, n)
     else:
         if missing_env(settings, ["RAPIDAPI_KEY"]):
             console.print("[red]RAPIDAPI_KEY ausente[/] (ou use --from-archive).")
@@ -155,11 +149,12 @@ def eval_snapshot(
         search = settings.config.search.model_copy(update={"date_posted": date_posted})
         jobs = apply_filters(dedupe(source.fetch(search), set()), settings.config.filters)
         picked = evaluation.pick_diverse(jobs, n, key=lambda j: source.origin_by_fingerprint.get(j.fingerprint, "?"))
-    written = evaluation.save_eval_jobs(picked, jobs_dir)
-    all_jobs = evaluation.load_eval_jobs(jobs_dir)
-    added = evaluation.ensure_label_entries(settings.eval_dir / "labels.yaml", all_jobs)
-    console.print(f"{written} vagas novas salvas; {len(all_jobs)} no total em {jobs_dir}.")
-    console.print(f"{added} entradas novas em data/eval/labels.yaml (preencha score 0-100 para o Spearman).")
+        written = evaluation.save_eval_jobs(picked, jobs_dir)
+        all_jobs = evaluation.load_eval_jobs(jobs_dir)
+        added = evaluation.ensure_label_entries(settings.eval_dir / "labels.yaml", all_jobs)
+        result = eval_runner.AddResult(added=written, total=len(all_jobs), new_labels=added)
+    console.print(f"{result.added} vagas novas salvas; {result.total} no total em {jobs_dir}.")
+    console.print(f"{result.new_labels} entradas novas em data/eval/labels.yaml (preencha score 0-100 para o Spearman).")
 
 
 @app.command("eval-models")
@@ -174,32 +169,14 @@ def eval_models(
     """Compara modelos nas vagas de data/eval/jobs/ e gera eval_report.md."""
     settings = _load(config)
     setup_logging(settings.logs_dir)
-    jobs = evaluation.load_eval_jobs(settings.eval_dir / "jobs")[:limit]
-    if not jobs:
-        console.print("[red]Nenhuma vaga em data/eval/jobs/.[/] Rode antes: python -m vagas_bot eval-snapshot")
-        raise typer.Exit(1)
+    report = _resolve(settings, out)
     try:
-        cv_md = load_cv(settings.cv_path)
-    except CVError as exc:
+        eval_runner.run_benchmark(settings, models or [settings.config.llm.ollama.model], runs=runs,
+                                  warmup=warmup, limit=limit, report_path=report)
+    except eval_runner.EvalRunnerError as exc:
         console.print(f"[red]{exc}[/]")
         raise typer.Exit(1) from exc
-    names = models or [settings.config.llm.ollama.model]
-    llm = settings.config.llm.ollama
-    results = evaluation.run_models(
-        settings, names, jobs, cv_md, prefs_from_config(settings.config.filters), runs, warmup,
-        make_scorer=evaluation.ollama_scorer_for,
-    )
-    meta = {
-        "date": datetime.now().isoformat(timespec="seconds"),
-        "runs": runs,
-        "num_ctx": llm.num_ctx,
-        "temperature": llm.temperature,
-        "think": llm.think,
-        "models": names,
-    }
-    payload = evaluation.results_payload(results, [evaluation.JobMeta.from_job(j) for j in jobs], meta)
-    results_path = evaluation.save_results(settings.eval_dir / "results", payload)
-    _write_report(settings, results_path, _resolve(settings, out))
+    console.print(f"[green]Relatório:[/] {report}")
 
 
 @app.command("eval-report")
@@ -214,18 +191,9 @@ def eval_report(
     if path is None or not path.is_file():
         console.print("[red]Nenhum resultado em data/eval/results/.[/] Rode antes: eval-models")
         raise typer.Exit(1)
-    _write_report(settings, path, _resolve(settings, out))
-
-
-def _write_report(settings: Settings, results_path: Path, out: Path) -> None:
-    runs, metas, meta = evaluation.load_results(results_path)
-    labels = evaluation.load_labels(settings.eval_dir / "labels.yaml")
-    by_id = {m.id: m for m in metas}
-    summaries = [evaluation.summarize(r, by_id, labels) for r in runs]
-    meta = meta | {"results_file": results_path.relative_to(settings.root).as_posix()
-                   if results_path.is_relative_to(settings.root) else str(results_path)}
-    out.write_text(render_report(runs, summaries, metas, labels, meta), encoding="utf-8")
-    console.print(f"[green]Relatório:[/] {out}")
+    report = _resolve(settings, out)
+    eval_runner.write_report(settings, path, report)
+    console.print(f"[green]Relatório:[/] {report}")
 
 
 # --- Fase 9: embeddings (sentence-transformers + fine-tuning) -------------------------
