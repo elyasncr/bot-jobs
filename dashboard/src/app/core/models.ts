@@ -48,6 +48,34 @@ export interface BenchmarkRun {
   jobs: number;
 }
 
+export interface BenchmarkModelOption {
+  name: string;
+  default: boolean;
+  warning: string | null;
+}
+
+export interface BenchmarkModels {
+  models: BenchmarkModelOption[];
+  pending_jobs: number;
+  total_jobs: number;
+}
+
+export interface BenchmarkStatus {
+  state: 'idle' | 'running' | 'done' | 'error';
+  phase: 'adding' | 'running' | null;
+  models: string[];
+  current_model: string | null;
+  model_index: number;
+  model_count: number;
+  done: number;
+  total: number;
+  added: number;
+  started_at: string | null;
+  finished_at: string | null;
+  result_file: string | null;
+  error: string | null;
+}
+
 export interface ModelSummary {
   model: string;
   available: boolean;

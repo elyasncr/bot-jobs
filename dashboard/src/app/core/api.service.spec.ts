@@ -62,4 +62,25 @@ describe('ApiService', () => {
     expect(error?.message).toBe('A nota deve ser...');
     expect(api.lastError()).toBeNull();
   });
+
+  it('lista os modelos, inicia o benchmark com POST e consulta o status', () => {
+    api.benchmarkModels().subscribe();
+    http.expectOne({ method: 'GET', url: '/api/benchmark/models' }).flush({ models: [], pending_jobs: 0, total_jobs: 0 });
+    api.startBenchmark(['qwen3:14b']).subscribe();
+    const req = http.expectOne({ method: 'POST', url: '/api/benchmark/run' });
+    expect(req.request.body).toEqual({ models: ['qwen3:14b'] });
+    req.flush({ state: 'running' });
+    api.benchmarkStatus().subscribe();
+    http.expectOne({ method: 'GET', url: '/api/benchmark/status' }).flush({ state: 'idle' });
+  });
+
+  it('erros do painel do benchmark voltam como mensagem, sem o aviso global', () => {
+    let message = '';
+    api.startBenchmark(['x']).subscribe({ error: (e: Error) => (message = e.message) });
+    http.expectOne('/api/benchmark/run').flush({ error: 'Já existe um benchmark rodando.' }, { status: 409, statusText: 'Conflict' });
+    expect(message).toBe('Já existe um benchmark rodando.');
+    api.benchmarkModels().subscribe({ error: () => undefined });
+    http.expectOne('/api/benchmark/models').flush({ error: 'Ollama indisponível' }, { status: 503, statusText: 'Unavailable' });
+    expect(api.lastError()).toBeNull();
+  });
 });
