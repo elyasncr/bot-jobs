@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import { ApiService } from './core/api.service';
+import { ThemeService } from './core/theme.service';
 
 @Component({
   selector: 'app-root',
@@ -20,6 +21,15 @@ import { ApiService } from './core/api.service';
           <a routerLink="/vagas" routerLinkActive="active">Vagas</a>
           <a routerLink="/benchmark" routerLinkActive="active">Benchmark</a>
         </nav>
+        <button type="button" class="theme-toggle" (click)="theme.toggle()"
+                [attr.aria-label]="isDark() ? 'Mudar para tema claro' : 'Mudar para tema escuro'"
+                [attr.title]="isDark() ? 'Tema claro' : 'Tema escuro'">
+          @if (isDark()) {
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></g></svg>
+          } @else {
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
+          }
+        </button>
       </div>
     </header>
     @if (api.lastError(); as error) {
@@ -46,6 +56,9 @@ import { ApiService } from './core/api.service';
             border-bottom: 2px solid transparent; margin-bottom: -1px; }
     nav a:hover { color: var(--text); }
     nav a.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+    .theme-toggle { display: grid; place-items: center; width: 36px; height: 36px; margin-left: auto; padding: 0; flex: none;
+                    border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+    .theme-toggle:hover { background: var(--hover); color: var(--text); }
     .alert { display: flex; justify-content: space-between; gap: 12px; margin: 12px max(24px, calc((100% - 1352px) / 2)) 0; padding: 10px 14px;
              border-radius: 8px; background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
     .alert button { all: unset; cursor: pointer; }
@@ -60,4 +73,6 @@ import { ApiService } from './core/api.service';
 })
 export class App {
   protected readonly api = inject(ApiService);
+  protected readonly theme = inject(ThemeService);
+  protected readonly isDark = computed(() => this.theme.theme() === 'dark');
 }
